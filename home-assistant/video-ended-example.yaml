@@ -1,19 +1,27 @@
-# Beispiel: An deine vorhandenen ADB-MediaSession-Sensoren anpassen.
-# Der Container erwartet POST /api/playback/end mit Header X-Admin-Password.
+# Pro TV eine passende Automation anlegen oder beide MediaSession-Entitäten hier als Trigger ergänzen.
+# Trigger und app_id-Attribut an deine tatsächlichen Entitäten anpassen.
 alias: SmartTube PartyQueue - Videoende melden
-mode: single
+mode: parallel
+max: 10
 triggers:
   - trigger: state
     entity_id: media_player.tv_game_adb
     from: playing
-    to:
-      - idle
-      - 'off'
+    to: idle
+    id: ke75
+  - trigger: state
+    entity_id: media_player.schlafzimmer_tv_schlafzimmer
+    from: playing
+    to: idle
+    id: kd70
 conditions:
   - condition: template
-    value_template: "{{ state_attr('media_player.tv_game_adb', 'app_id') == 'com.teamsmart.videomanager.tv' }}"
+    value_template: >-
+      {{ trigger.from_state.attributes.get('app_id') == 'org.smarttube.stable' }}
 actions:
   - action: rest_command.partyqueue_video_ended
+    data:
+      target_tv: "{{ trigger.id }}"
 
 # configuration.yaml:
 # rest_command:
@@ -22,3 +30,5 @@ actions:
 #     method: POST
 #     headers:
 #       X-Admin-Password: !secret partyqueue_admin_password
+#       Content-Type: application/json
+#     payload: '{"target_tv":"{{ target_tv }}"}'
