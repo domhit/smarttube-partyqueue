@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     youtube_search_warning_at: int = 80
     youtube_search_hard_stop_at: int = 98
     base_playlist_recent_exclude: int = 20
+    prestart_seconds: float = 4.0
+    idle_fallback_delay: float = 2.0
+    prestart_idle_guard: float = 10.0
     smarttube_package: str = 'org.smarttube.stable'
     default_tv: str = 'ke75'
     tv_devices: str = 'xi4k|Xiaomi Gästezimmer,ke75|KE75 Spielzimmer,kd70|KD70 Schlafzimmer,fiwo|FireTV Wohnzimmer,fi4k|FireTV Partykeller'

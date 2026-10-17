@@ -1,0 +1,34 @@
+alias: SmartTube PartyQueue - Fortschritt und Videoende
+mode: parallel
+max: 25
+triggers:
+  - trigger: state
+    entity_id: media_player.xiaomi_gastezimmer
+    id: xi4k
+  - trigger: state
+    entity_id: media_player.ke75_spielzimmer
+    id: ke75
+  - trigger: state
+    entity_id: media_player.kd70_schlafzimmer
+    id: kd70
+  - trigger: state
+    entity_id: media_player.firetv_wohnzimmer
+    id: fiwo
+  - trigger: state
+    entity_id: media_player.firetv_partykeller
+    id: fi4k
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state.state in ['playing', 'paused', 'idle'] }}
+actions:
+  - variables:
+      reported_app_id: >-
+        {{ trigger.to_state.attributes.get('app_id',
+           trigger.from_state.attributes.get('app_id', '') if trigger.from_state else '') }}
+  - action: rest_command.partyqueue_playback_progress
+    data:
+      target_tv: "{{ trigger.id }}"
+      playback_state: "{{ trigger.to_state.state }}"
+      media_position: "{{ trigger.to_state.attributes.get('media_position', 0) | float(0) }}"
+      app_id: "{{ reported_app_id }}"

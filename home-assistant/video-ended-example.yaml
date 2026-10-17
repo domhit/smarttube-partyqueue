@@ -1,40 +1,5 @@
-alias: SmartTube PartyQueue - Videoende erkennen
-mode: parallel
-max: 10
-triggers:
-  - trigger: state
-    entity_id: media_player.xiaomi_gastezimmer
-    from: playing
-    to: idle
-    id: xi4k
-  - trigger: state
-    entity_id: media_player.ke75_spielzimmer
-    from: playing
-    to: idle
-    id: ke75
-  - trigger: state
-    entity_id: media_player.kd70_schlafzimmer
-    from: playing
-    to: idle
-    id: kd70
-  - trigger: state
-    entity_id: media_player.firetv_wohnzimmer
-    from: playing
-    to: idle
-    id: fiwo
-  - trigger: state
-    entity_id: media_player.firetv_partykeller
-    from: playing
-    to: idle
-    id: fi4k
-conditions:
-  - condition: template
-    value_template: >-
-      {{ trigger.from_state.attributes.get('app_id') == 'org.smarttube.stable' }}
-actions:
-  - delay: "00:00:02"
-  - condition: template
-    value_template: "{{ states(trigger.entity_id) == 'idle' }}"
-  - action: rest_command.partyqueue_video_ended
-    data:
-      target_tv: "{{ trigger.id }}"
+# V2.3: Diese alte reine Idle-Automation nicht mehr verwenden.
+# Stattdessen playback-progress.yaml als Automation anlegen.
+# Sie sendet MediaSession-Position und Status an die PartyQueue.
+# Der Container startet primär 4 Sekunden vor Ende den nächsten Titel
+# und nutzt idle nach 2 Sekunden weiterhin als Fallback.
