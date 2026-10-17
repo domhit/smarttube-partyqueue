@@ -1,0 +1,14 @@
+# In configuration.yaml übernehmen und IP anpassen.
+rest_command:
+  partyqueue_video_ended:
+    url: "http://SYNOLOGY-IP:8787/api/playback/end"
+    method: POST
+    headers:
+      X-Admin-Password: !secret partyqueue_admin_password
+      Content-Type: application/json
+    payload: >-
+      {"target_tv":"{{ target_tv }}"}
+    timeout: 10
+
+# In secrets.yaml:
+# partyqueue_admin_password: "gleich wie ADMIN_PASSWORD in .env"

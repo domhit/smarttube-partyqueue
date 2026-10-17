@@ -1,53 +1,56 @@
-# SmartTube PartyQueue V2.1
+# SmartTube PartyQueue V2.2
 
-Selbst gehostete Party-Jukebox mit YouTube-Suche, getrennten Queues für mehrere Android-TVs und Wiedergabe in SmartTube über Home Assistant/ADB.
+## Neu in V2.2
 
-## Mehrere TVs konfigurieren
+- 50 YouTube-Suchergebnisse pro API-Suche
+- lokale Zählung von Search-Aufrufen, Cache-Treffern und Fehlern
+- dynamischer Quota-Reset nach Mitternacht `America/Los_Angeles`
+- gemeinsame interne Grundplaylist
+- zufällige Grundwiedergabe mit Ausschluss der letzten 20 Grundtitel je TV
+- Grundplaylist aus Suche, URL, Verlauf oder öffentlicher YouTube-Playlist befüllen
+- Gastwünsche haben Vorrang; danach läuft die Grundplaylist weiter
+- Ende-Erkennung über getrennte ADB-MediaSession-Entities (`playing` nach `idle`)
+- fünf hinterlegte Zielgeräte
 
-In `.env`:
-
-```env
-SMARTTUBE_PACKAGE=org.smarttube.stable
-DEFAULT_TV=ke75
-TV_DEVICES=ke75|KE75 Medienzimmer,kd70|KD70 Schlafzimmer
-```
-
-Format: `interne-id|Anzeigename`, mehrere Geräte mit Komma trennen. Die interne ID wird an Home Assistant als `target_tv` gesendet.
-
-In `home-assistant/automation.yaml` die Zuordnung anpassen:
-
-```yaml
-target_entities:
-  ke75: media_player.tv_game_adb
-  kd70: media_player.schlafzimmer_tv_schlafzimmer
-```
-
-Die IDs links müssen exakt zu `TV_DEVICES` passen. Die Entity-IDs rechts sind deine Android-TV-ADB-Entitäten.
-
-## Update einer vorhandenen Installation
+## Update
 
 ```bash
 cd /volume1/docker/smarttube-partyqueue
 git pull
 ```
 
-Danach `.env` um `DEFAULT_TV`, `TV_DEVICES` und den aktuellen Paketnamen ergänzen und den Portainer-Stack mit Build neu deployen. Die vorhandene SQLite-Datenbank wird beim Start automatisch um `target_tv` erweitert. Alte offene Einträge werden dem `DEFAULT_TV` zugeordnet.
+Die bestehende `.env` bleibt erhalten. Ergänze fehlende Werte aus `.env.example`, insbesondere:
 
-## Verhalten
+```env
+SEARCH_RESULTS=50
+SEARCH_CACHE_HOURS=168
+YOUTUBE_SEARCH_DAILY_LIMIT=100
+YOUTUBE_SEARCH_WARNING_AT=80
+YOUTUBE_SEARCH_HARD_STOP_AT=98
+BASE_PLAYLIST_RECENT_EXCLUDE=20
+```
 
-- Jedes TV-Gerät besitzt eine eigene Queue und einen eigenen aktuell laufenden Titel.
-- Das gleiche Video darf gleichzeitig auf verschiedenen TVs eingeplant werden.
-- Gastlimit und Duplikatschutz gelten pro TV.
-- Gäste und Host wählen das Zielgerät in der Weboberfläche.
-- Skip, Sortierung und Videoende wirken nur auf das ausgewählte Gerät.
-- Die globale Queue-Sperre sperrt weiterhin alle Geräte gemeinsam.
-
-## Start
+Danach den Portainer-Stack mit erneutem Build aktualisieren oder:
 
 ```bash
-cp .env.example .env
-nano .env
+docker compose down
 docker compose up -d --build
 ```
 
-Gastansicht: Port `8787`, Hostansicht: `/host`.
+Die SQLite-Datenbank wird automatisch erweitert. Vorherige Queue und Historie bleiben erhalten.
+
+## Home Assistant
+
+- `home-assistant/automation.yaml`: Start per fester ADB-Entity-Zuordnung
+- `home-assistant/video-ended-example.yaml`: Ende per MediaSession `playing -> idle`
+- `home-assistant/rest-command.yaml`: Rückmeldung an den Container
+
+In `rest-command.yaml` die Synology-IP einsetzen und in `secrets.yaml` dasselbe Passwort wie `ADMIN_PASSWORD` hinterlegen.
+
+## Grundplaylist
+
+Die Grundplaylist ist gemeinsam für alle TVs. Jeder TV besitzt jedoch eine eigene Zufallshistorie. Über **Grundmusik starten** beginnt die Wiedergabe auf dem ausgewählten TV. Wenn ein Wunsch eintrifft, läuft der aktuelle Grundtitel zu Ende, danach werden alle Wünsche gespielt und anschließend wieder zufällig aus der Grundplaylist gewählt.
+
+## Quota-Zähler
+
+Gezählt werden ausschließlich von dieser PartyQueue abgesendete `search.list`-Versuche. Cache-Treffer zählen nicht als API-Suche. Wenn derselbe API-Key noch anderweitig verwendet wird, bleibt die Google Cloud Console die maßgebliche Quelle.
