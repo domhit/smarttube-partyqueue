@@ -1,0 +1,17 @@
+alias: SmartTube PartyQueue - Video starten
+id: smarttube_partyqueue_play
+mode: restart
+triggers:
+  - trigger: webhook
+    webhook_id: smarttube_partyqueue_play
+    allowed_methods: [POST]
+    local_only: true
+actions:
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.tv_game_adb
+    data:
+      command: >-
+        am start -a android.intent.action.VIEW
+        -d "{{ trigger.json.url }}"
+        com.teamsmart.videomanager.tv

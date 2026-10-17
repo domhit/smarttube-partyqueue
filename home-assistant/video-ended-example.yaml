@@ -1,0 +1,24 @@
+# Beispiel: An deine vorhandenen ADB-MediaSession-Sensoren anpassen.
+# Der Container erwartet POST /api/playback/end mit Header X-Admin-Password.
+alias: SmartTube PartyQueue - Videoende melden
+mode: single
+triggers:
+  - trigger: state
+    entity_id: media_player.tv_game_adb
+    from: playing
+    to:
+      - idle
+      - 'off'
+conditions:
+  - condition: template
+    value_template: "{{ state_attr('media_player.tv_game_adb', 'app_id') == 'com.teamsmart.videomanager.tv' }}"
+actions:
+  - action: rest_command.partyqueue_video_ended
+
+# configuration.yaml:
+# rest_command:
+#   partyqueue_video_ended:
+#     url: http://IP-DES-CONTAINERS:8787/api/playback/end
+#     method: POST
+#     headers:
+#       X-Admin-Password: !secret partyqueue_admin_password
