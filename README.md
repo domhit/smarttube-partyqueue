@@ -1,15 +1,17 @@
-# SmartTube PartyQueue V2.4.2
+# SmartTube PartyQueue V2.5
 
-Hotfix für die Migration der Grundplaylist.
+## Playlist-Verwaltung neu strukturiert
 
-## Behoben
+Die einer Party zugeordnete Grundplaylist und die im Adminbereich bearbeitete Playlist sind vollständig getrennt.
 
-- Migration der alten Tabelle `base_play_history` von `base_item_id` auf `playlist_item_id`.
-- Grundplaylist startet wieder, wenn die Wunschqueue leer ist.
-- Der rote Fehler `no such column: playlist_item_id` tritt nicht mehr auf.
-- Sichtbarer Schalter **Grundplaylist aktiv** in der aktiven Party.
-- Leere Playlistnamen werden mit verständlicher Meldung abgelehnt.
-- Bereits vorhandene Playlistnamen erzeugen einen verständlichen `409`-Hinweis statt eines SQLite-Tracebacks.
+- **Aktive Party → Verwendete Grundplaylist** ändert sich erst mit **Party speichern**.
+- **Playlist-Verwaltung → Bearbeitete Playlist** kann unabhängig gewechselt werden.
+- Eine neue Playlist ist leer.
+- **Duplizieren** kopiert alle Titel in eine neue Playlist.
+- Playlists können umbenannt und gelöscht werden.
+- Einer Party zugeordnete Playlists können nicht gelöscht werden.
+- Titel können per einzelner YouTube-URL, YouTube-Playlist-Import oder aus dem Verlauf hinzugefügt werden.
+- Dropdowns zeigen die Titelanzahl an.
 
 ## Update
 
@@ -20,4 +22,4 @@ docker compose down
 docker compose up -d --build
 ```
 
-Keine manuelle Änderung an der Datenbank nötig. Die Migration läuft beim Containerstart.
+Keine `.env`- oder Home-Assistant-Änderung nötig. Bestehende Daten werden weiterverwendet.

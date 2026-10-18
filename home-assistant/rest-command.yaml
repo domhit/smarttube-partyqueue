@@ -1,29 +1,6 @@
-# In configuration.yaml übernehmen und SYNOLOGY-IP anpassen.
 rest_command:
   partyqueue_playback_progress:
     url: "http://SYNOLOGY-IP:8787/api/playback/progress"
     method: POST
-    headers:
-      X-Admin-Password: !secret partyqueue_admin_password
-      Content-Type: application/json
-    payload: >-
-      {
-        "target_tv": "{{ target_tv }}",
-        "state": "{{ playback_state }}",
-        "media_position": {{ media_position | float(0) }},
-        "app_id": "{{ app_id }}"
-      }
-    timeout: 10
-
-  partyqueue_video_ended:
-    url: "http://SYNOLOGY-IP:8787/api/playback/end"
-    method: POST
-    headers:
-      X-Admin-Password: !secret partyqueue_admin_password
-      Content-Type: application/json
-    payload: >-
-      {"target_tv":"{{ target_tv }}"}
-    timeout: 10
-
-# In secrets.yaml:
-# partyqueue_admin_password: "gleich wie ADMIN_PASSWORD in .env"
+    headers: {X-Admin-Password: !secret partyqueue_admin_password, Content-Type: application/json}
+    payload: '{"target_tv":"{{ target_tv }}","state":"{{ playback_state }}","media_position":{{ media_position|float(0) }},"app_id":"{{ app_id }}"}'
