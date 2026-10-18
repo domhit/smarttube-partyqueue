@@ -100,13 +100,13 @@ async def detail(vid=None,url=None):
  return d
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(title='SmartTube PartyQueue',version='2.4.0',lifespan=life);BASE=Path(__file__).parent;app.mount('/static',StaticFiles(directory=BASE/'static'),name='static')
+app=FastAPI(title='SmartTube PartyQueue',version='2.4.1',lifespan=life);BASE=Path(__file__).parent;app.mount('/static',StaticFiles(directory=BASE/'static'),name='static')
 @app.get('/')
 async def guest():return FileResponse(BASE/'static/guest.html')
 @app.get('/host')
 async def host():return FileResponse(BASE/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.4.0'}
+async def health():return {'ok':True,'version':'2.4.1'}
 @app.get('/api/state')
 async def state():return await snap()
 @app.get('/api/party/public')
