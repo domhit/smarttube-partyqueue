@@ -1,30 +1,31 @@
-# SmartTube PartyQueue V2.3
+# SmartTube PartyQueue V2.4
 
-## Neu in V2.3
+## Neu
 
-- Vorstart des nächsten Titels standardmäßig 4 Sekunden vor Videoende
-- SponsorBlock-kompatibel, weil die echte MediaSession-Position ausgewertet wird
-- `idle` mit 2 Sekunden Wartezeit bleibt als Fallback erhalten
-- Schutzfenster verhindert, dass das `idle` des alten Videos den bereits gestarteten Folgetitel überspringt
-- Fortschrittsbalken und Zeitanzeige in Gast- und Hostansicht
-- lokale Fortschrittsanimation zwischen den MediaSession-Updates
-- grün/gelb/rote Suchkontingent-Ampel auf der Gästeseite
-
-Alle Funktionen aus V2.2 bleiben erhalten: Multi-TV, gemeinsame zufällige Grundplaylist, YouTube-Playlist-Import, Verlauf, 50 Suchergebnisse und Quota-Zähler.
+- Party-Sitzungen mit Name, eigener History und aktivem Grundplaylist-Profil
+- Admin-Freigabe der Abspieler; Gäste sehen nur freigegebene Geräte
+- sichtbarer Queue-Sperrstatus in Host- und Gastansicht
+- Wiederholungsschutz für die letzten N Titel einer Party
+- benannte Grundplaylists
+- Wunschlimit pro Party, `0` bedeutet unbegrenzt
+- Upvotes; optional nach Votes sortierte Wunschqueue
+- Toast-Overlays zusätzlich zu persistenten Meldungen
+- HTML-, CSV-, JSON- und M3U-Export der Party-History
+- Statistik: gesamt, gewünscht, übersprungen und Votes
+- Host-Skip
+- optionale Erkennung eines externen SmartTube-Skips über starken Positionsrücksprung
+- dynamisches Tampermonkey-Script mit aktueller Party, Sperrstatus und freigegebenen TVs
 
 ## Update
 
-Die bestehende `.env` nicht überschreiben. Ergänzen:
+Bestehende `.env` nicht überschreiben. Optional ergänzen:
 
 ```env
-PRESTART_SECONDS=4
-IDLE_FALLBACK_DELAY=2
-PRESTART_IDLE_GUARD=10
+EXTERNAL_SKIP_MIN_PREVIOUS=30
+EXTERNAL_SKIP_MAX_NEW=8
 ```
 
-Die bisherigen Gerätewerte bleiben unverändert.
-
-Danach neu bauen:
+Dann neu bauen:
 
 ```bash
 cd /volume1/docker/smarttube-partyqueue
@@ -33,25 +34,21 @@ docker compose down
 docker compose up -d --build
 ```
 
-## Home Assistant aktualisieren
+SQLite wird automatisch migriert. Die bisherige Grundplaylist wird nach `Party allgemein` übernommen.
 
-1. Inhalt von `home-assistant/rest-command.yaml` in `configuration.yaml` übernehmen bzw. den vorhandenen `rest_command:`-Block erweitern.
-2. `SYNOLOGY-IP` ersetzen.
-3. Home Assistant neu starten.
-4. Die bisherige Automation **SmartTube PartyQueue - Videoende erkennen** deaktivieren oder löschen.
-5. Eine neue Automation aus `home-assistant/playback-progress.yaml` anlegen.
-6. Die vorhandene Startautomation aus `home-assistant/automation.yaml` bleibt bestehen.
+## Bedienung
 
-## Ablauf
+1. In `/host` anmelden.
+2. Aktive Party konfigurieren oder **Neue Party** wählen.
+3. Grundplaylist, erlaubte Abspieler, Standard-TV, Wunschlimit und Wiederholungsschutz einstellen.
+4. `Wunschlimit = 0` schaltet das Limit aus.
+5. `Wiederholungsschutz = 0` deaktiviert die Prüfung.
+6. Die externe SmartTube-Skip-Erkennung zunächst nur testweise aktivieren. Rückspulen von über 30 Sekunden auf unter 8 Sekunden kann ebenfalls als Skip erkannt werden.
 
-Die MediaSession-Automation sendet Status und `media_position` an `/api/playback/progress`. Der Container vergleicht die Position mit der bereits in Queue und Grundplaylist gespeicherten `duration_seconds`.
+## Tampermonkey
 
-- `playing` und Position >= Dauer minus 4 Sekunden: Folgetitel sofort starten
-- `paused`: Position bleibt stehen, kein Vorstart
-- `idle`: nach 2 Sekunden Folgetitel starten, falls der Vorstart nicht bereits erfolgt ist
+In `userscript/partyqueue.user.js` die Konstante `PARTYQUEUE` auf die echte interne Adresse setzen. Das Script lädt die aktive Party dynamisch und zeigt nur freigegebene Abspieler.
 
-## Suchampel für Gäste
+## Export
 
-- Grün: unter `YOUTUBE_SEARCH_WARNING_AT`
-- Gelb: ab `YOUTUBE_SEARCH_WARNING_AT`
-- Rot: ab `YOUTUBE_SEARCH_HARD_STOP_AT`; Linkeingabe bleibt möglich
+Die Hostseite bietet HTML, CSV, JSON und M3U. Der HTML-Export enthält anklickbare YouTube-Titel. Exporte sind admin-geschützt.
