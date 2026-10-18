@@ -1,31 +1,29 @@
-# SmartTube PartyQueue V2.5.2
+# SmartTube PartyQueue V2.6.0
 
-## Neu
+## Playlist-Verwaltung fertiggestellt
 
-- YouTube-API-Verbrauch im Host-Dashboard wieder sichtbar
-- Suchaufrufe, geschätzte Rest-Suchen, Cache-Treffer, Playlist-Aufrufe, Fehler und Reset-Zeit
-- grün/gelb/rote Quota-Anzeige
-- Duplikat- und Wiederholungsschutz jetzt pro Party **und Ziel-TV**
-- derselbe Titel darf gleichzeitig auf unterschiedlichen TVs eingeplant werden
-- derselbe Titel bleibt auf demselben TV eindeutig
+- Titel und Kanal filtern
+- Titelanzahl, aktive Titel und Gesamtlaufzeit anzeigen
+- sichtbare Titel gemeinsam auswählen
+- ausgewählte Titel in eine andere Playlist kopieren
+- ausgewählte Titel in eine andere Playlist verschieben
+- vorhandene Duplikate im Ziel werden übersprungen
+- Titel einzeln aktivieren oder deaktivieren
+- Playlist-Reihenfolge per Drag-and-drop ändern
+- bestehendes Erstellen, Duplizieren, Umbenennen, Löschen, Einzelimport und YouTube-Playlist-Import bleiben erhalten
 
-## Tampermonkey
+## Wunschqueue
 
-- PartyQueue-Button weiterhin auf Watch-Seiten
-- PartyQueue-Button direkt an YouTube-Suchergebnissen
-- optionaler Rechtsklick auf einen YouTube-Videolink öffnet die Zielauswahl
-- `Shift + Rechtsklick` öffnet weiterhin das normale Browser-Kontextmenü
-- freigegebene Zielgeräte erscheinen als echte Buttons
-- bei nur einem freigegebenen TV wird ohne Dialog direkt hinzugefügt
-- zuletzt gewähltes Gerät wird grün hervorgehoben
-- Toasts statt blockierender Erfolgs-Alerts
-- kompatibel mit YouTubes SPA-Navigation
+- Drag-and-drop für die Host-Queue
+- Pfeiltasten bleiben als Touch-Fallback erhalten
+- `Als Nächstes` und `Entfernen` bleiben erhalten
+- Sortierung bleibt pro Ziel-TV getrennt
 
-Vor Verwendung im Userscript weiterhin die Adresse anpassen:
+## Userscript
 
-```javascript
-const PARTYQUEUE = 'http://partyqueue.local:8787';
-```
+- Version 2.6.0
+- Trusted-Types-sicher, ohne `innerHTML`
+- YouTube-Suchergebnisbuttons, Rechtsklick und TV-Auswahldialog bleiben erhalten
 
 ## Update
 
@@ -36,4 +34,4 @@ docker compose down
 docker compose up -d --build
 ```
 
-Keine Änderung an `.env`, Home Assistant oder SQLite nötig.
+Keine Änderung an `.env`, Home Assistant oder der bestehenden Datenbank erforderlich.
