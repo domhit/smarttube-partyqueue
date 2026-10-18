@@ -41,6 +41,7 @@ function fillPartyForm(s) {
   ).join('');
   $('#limit').value = p.request_limit;
   $('#repeat').value = p.repeat_window;
+  $('#playlistEnabled').checked = !!p.playlist_enabled;
   $('#upvotes').checked = !!p.upvote_sort;
   $('#externalSkip').checked = !!p.detect_external_skip;
   formPartyId = p.id;
@@ -101,7 +102,7 @@ $('#login').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 
-['partyName','playlist','defaultTv','limit','repeat','upvotes','externalSkip'].forEach((id) => {
+['partyName','playlist','defaultTv','limit','repeat','playlistEnabled','upvotes','externalSkip'].forEach((id) => {
   $(`#${id}`).addEventListener('input', () => formDirty = true);
   $(`#${id}`).addEventListener('change', () => formDirty = true);
 });
@@ -116,6 +117,7 @@ $('#saveParty').onclick = async () => {
       default_tv:$('#defaultTv').value,
       request_limit:+$('#limit').value,
       repeat_window:+$('#repeat').value,
+      playlist_enabled:$('#playlistEnabled').checked,
       upvote_sort:$('#upvotes').checked,
       detect_external_skip:$('#externalSkip').checked
     })});
@@ -133,7 +135,7 @@ $('#importPlaylist').onclick = () => api('/api/admin/playlists/import', {method:
 $('#newParty').onclick = () => {
   const name = prompt('Name der neuen Party');
   if (!name) return;
-  api('/api/admin/parties', {method:'POST', body:body({name,playlist_id:+$('#playlist').value,allowed_devices:[...document.querySelectorAll('[data-device]:checked')].map((x) => x.dataset.device),default_tv:$('#defaultTv').value,request_limit:+$('#limit').value,repeat_window:+$('#repeat').value,upvote_sort:true})}).then(() => {formDirty=false;formPartyId=null;toast('Neue Party aktiv',true)}).catch((e) => toast(e.message));
+  api('/api/admin/parties', {method:'POST', body:body({name,playlist_id:+$('#playlist').value,allowed_devices:[...document.querySelectorAll('[data-device]:checked')].map((x) => x.dataset.device),default_tv:$('#defaultTv').value,request_limit:+$('#limit').value,repeat_window:+$('#repeat').value,upvote_sort:true,playlist_enabled:true})}).then(() => {formDirty=false;formPartyId=null;toast('Neue Party aktiv',true)}).catch((e) => toast(e.message));
 };
 document.querySelectorAll('[data-export]').forEach((b) => b.onclick = () => window.open(`/api/party/${state.party.id}/export/${b.dataset.export}?password=${encodeURIComponent($('#pw').value)}`));
 $('#loadStats').onclick = () => api('/api/admin/stats').then((a) => $('#stats').innerHTML = a.map((x) => `<p><b>${esc(x.title)}</b>: ${x.played_total}× gesamt, ${x.requested_total}× gewünscht, ${x.skipped_total}× übersprungen, ${x.votes_total || 0} Votes</p>`).join('')).catch((e) => toast(e.message));

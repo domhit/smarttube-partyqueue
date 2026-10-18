@@ -1,15 +1,15 @@
-# SmartTube PartyQueue V2.4.1
+# SmartTube PartyQueue V2.4.2
 
-Hotfix für die V2.4-Weboberfläche.
+Hotfix für die Migration der Grundplaylist.
 
 ## Behoben
 
-- Hostformular wird nicht mehr bei jedem MediaSession-/WebSocket-Update zurückgesetzt.
-- Eingaben für Partyname, Playlist, Standard-TV, Limit, Wiederholungsschutz, Upvotes und Skip-Erkennung bleiben bis zum Speichern erhalten.
-- Nach einem Partywechsel wird das Formular weiterhin korrekt neu geladen.
-- Gastseite funktioniert nun auch über unverschlüsseltes HTTP, wo `crypto.randomUUID()` nicht verfügbar ist.
-- Gastseite behandelt fehlende Playback-Daten defensiv und zeigt Current/Queue trotzdem an.
-- Userscript enthält `@description`, breitere YouTube-Matches und einen UUID-Fallback.
+- Migration der alten Tabelle `base_play_history` von `base_item_id` auf `playlist_item_id`.
+- Grundplaylist startet wieder, wenn die Wunschqueue leer ist.
+- Der rote Fehler `no such column: playlist_item_id` tritt nicht mehr auf.
+- Sichtbarer Schalter **Grundplaylist aktiv** in der aktiven Party.
+- Leere Playlistnamen werden mit verständlicher Meldung abgelehnt.
+- Bereits vorhandene Playlistnamen erzeugen einen verständlichen `409`-Hinweis statt eines SQLite-Tracebacks.
 
 ## Update
 
@@ -20,4 +20,4 @@ docker compose down
 docker compose up -d --build
 ```
 
-Keine Änderung an `.env`, Home-Assistant-Automationen oder Datenbank erforderlich.
+Keine manuelle Änderung an der Datenbank nötig. Die Migration läuft beim Containerstart.

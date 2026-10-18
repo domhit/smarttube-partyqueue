@@ -17,7 +17,7 @@ class Tv(BaseModel): target_tv:str
 class Progress(BaseModel): target_tv:str; state:str; media_position:float=0; app_id:Optional[str]=None
 class Vote(BaseModel): guest_id:str
 class PartyCreate(BaseModel): name:str; playlist_id:Optional[int]=1; allowed_devices:list[str]; default_tv:str; request_limit:int=3; repeat_window:int=20; upvote_sort:bool=True; detect_external_skip:bool=False
-class PartyUpdate(BaseModel): name:Optional[str]=None; playlist_id:Optional[int]=None; allowed_devices:Optional[list[str]]=None; default_tv:Optional[str]=None; request_limit:Optional[int]=None; repeat_window:Optional[int]=None; queue_locked:Optional[bool]=None; upvote_sort:Optional[bool]=None; detect_external_skip:Optional[bool]=None
+class PartyUpdate(BaseModel): name:Optional[str]=None; playlist_id:Optional[int]=None; allowed_devices:Optional[list[str]]=None; default_tv:Optional[str]=None; request_limit:Optional[int]=None; repeat_window:Optional[int]=None; queue_locked:Optional[bool]=None; upvote_sort:Optional[bool]=None; detect_external_skip:Optional[bool]=None; playlist_enabled:Optional[bool]=None
 class PlaylistCreate(BaseModel): name:str
 class PlaylistAdd(BaseModel): playlist_id:int; video_id:Optional[str]=None; url:Optional[str]=None; history_id:Optional[int]=None
 class PlaylistImport(BaseModel): playlist_id:int; playlist:str
@@ -63,7 +63,7 @@ async def ha_play(x):
  async with httpx.AsyncClient(timeout=15) as c:
   r=await c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package,'queue_item_id':x['id']});r.raise_for_status()
 def pick_base(c,p,tv):
- if not p['playlist_id']:return None
+ if not p['playlist_id'] or not p.get('playlist_enabled',1):return None
  rows=[dict(r) for r in c.execute('SELECT * FROM playlist_items WHERE playlist_id=? AND enabled=1',(p['playlist_id'],))]
  if not rows:return None
  recent=[r['playlist_item_id'] for r in c.execute('SELECT playlist_item_id FROM base_play_history WHERE party_id=? AND target_tv=? ORDER BY id DESC LIMIT ?',(p['id'],tv,settings.base_playlist_recent_exclude))]
@@ -100,13 +100,13 @@ async def detail(vid=None,url=None):
  return d
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(title='SmartTube PartyQueue',version='2.4.1',lifespan=life);BASE=Path(__file__).parent;app.mount('/static',StaticFiles(directory=BASE/'static'),name='static')
+app=FastAPI(title='SmartTube PartyQueue',version='2.4.2',lifespan=life);BASE=Path(__file__).parent;app.mount('/static',StaticFiles(directory=BASE/'static'),name='static')
 @app.get('/')
 async def guest():return FileResponse(BASE/'static/guest.html')
 @app.get('/host')
 async def host():return FileResponse(BASE/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.4.1'}
+async def health():return {'ok':True,'version':'2.4.2'}
 @app.get('/api/state')
 async def state():return await snap()
 @app.get('/api/party/public')
@@ -172,7 +172,7 @@ async def party_new(b:PartyCreate,x_admin_password:str=Header(default='')):
 async def party_edit(b:PartyUpdate,x_admin_password:str=Header(default='')):
  auth(x_admin_password);p=require_party();data=b.model_dump(exclude_none=True)
  if 'allowed_devices' in data:data['allowed_devices']=','.join(data['allowed_devices'])
- allowed_fields={'name','playlist_id','allowed_devices','default_tv','request_limit','repeat_window','queue_locked','upvote_sort','detect_external_skip'}
+ allowed_fields={'name','playlist_id','allowed_devices','default_tv','request_limit','repeat_window','queue_locked','upvote_sort','detect_external_skip','playlist_enabled'}
  with conn() as c:
   for k,v in data.items():
    if k in allowed_fields:c.execute(f'UPDATE parties SET {k}=? WHERE id=?',(int(v) if isinstance(v,bool) else v,p['id']))
@@ -184,8 +184,12 @@ async def party_activate(pid:int,x_admin_password:str=Header(default='')):
  await cast();return {'ok':True}
 @app.post('/api/admin/playlists')
 async def playlist_new(b:PlaylistCreate,x_admin_password:str=Header(default='')):
- auth(x_admin_password)
- with conn() as c:cur=c.execute('INSERT INTO playlists(name) VALUES(?)',(b.name.strip(),))
+ auth(x_admin_password); name=b.name.strip()
+ if not name: raise HTTPException(400,'Bitte einen Namen für die Grundplaylist eingeben')
+ with conn() as c:
+  if c.execute('SELECT 1 FROM playlists WHERE lower(name)=lower(?)',(name,)).fetchone():
+   raise HTTPException(409,'Eine Grundplaylist mit diesem Namen existiert bereits')
+  cur=c.execute('INSERT INTO playlists(name) VALUES(?)',(name,))
  await cast();return {'id':cur.lastrowid}
 @app.post('/api/admin/playlists/item')
 async def playlist_add(b:PlaylistAdd,x_admin_password:str=Header(default='')):
