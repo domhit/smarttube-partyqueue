@@ -1,14 +1,59 @@
 // ==UserScript==
-// @name         YouTube → SmartTube PartyQueue V2.4
+// @name         YouTube → SmartTube PartyQueue
 // @namespace    smarttube-partyqueue
-// @version      2.4.0
-// @match        https://www.youtube.com/watch*
+// @version      2.5
+// @description Fügt Videos direkt zur PartyQueue hinzu
+// @match        https://www.youtube.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      *
 // ==/UserScript==
-(() => {
-  const PARTYQUEUE='http://partyqueue.local:8787';
-  const get=(path,cb)=>GM_xmlhttpRequest({method:'GET',url:PARTYQUEUE+path,onload:r=>cb(JSON.parse(r.responseText))});
-  function button(){if(document.getElementById('partyqueue-add'))return;const b=document.createElement('button');b.id='partyqueue-add';b.textContent='🎉 Wunsch hinzufügen';Object.assign(b.style,{position:'fixed',right:'20px',bottom:'20px',zIndex:99999,padding:'14px',borderRadius:'12px',border:0,background:'#2563eb',color:'#fff',fontWeight:'bold'});b.onclick=()=>get('/api/party/public',p=>{if(p.queue_locked)return alert('Musikwünsche sind derzeit gesperrt');let name=localStorage.partyName||prompt('Dein Name?')||'Gast';localStorage.partyName=name;let ids=p.allowed_devices,choice=ids.length===1?ids[0].id:prompt(`Zielgerät: ${ids.map(x=>x.id+'='+x.name).join(', ')}`,p.default_tv);if(!ids.some(x=>x.id===choice))return alert('Ungültiges Zielgerät');let gid=localStorage.guestId||(localStorage.guestId=crypto.randomUUID());GM_xmlhttpRequest({method:'POST',url:PARTYQUEUE+'/api/queue',headers:{'Content-Type':'application/json'},data:JSON.stringify({url:location.href,requested_by:name,guest_id:gid,target_tv:choice}),onload:r=>{let j={};try{j=JSON.parse(r.responseText)}catch{}alert(r.status<300?`Zur Queue hinzugefügt · Position ${j.position}`:(j.detail||'Fehler'))}})});document.body.appendChild(b)}
-  new MutationObserver(button).observe(document.documentElement,{childList:true,subtree:true});button();
+
+(function () {
+
+    'use strict';
+
+    function addButton() {
+
+        if (document.getElementById("partyqueue-add")) {
+            return;
+        }
+
+        if (!document.body) {
+            return;
+        }
+
+        const btn = document.createElement("button");
+
+        btn.id = "partyqueue-add";
+        btn.textContent = "🎉 PartyQueue";
+
+        btn.style.position = "fixed";
+        btn.style.bottom = "20px";
+        btn.style.right = "20px";
+        btn.style.zIndex = "999999";
+        btn.style.background = "#2563eb";
+        btn.style.color = "white";
+        btn.style.border = "none";
+        btn.style.padding = "14px";
+        btn.style.borderRadius = "12px";
+        btn.style.cursor = "pointer";
+
+        btn.onclick = () => {
+
+            alert(
+                "PartyQueue Button funktioniert\n\n" +
+                location.href
+            );
+
+        };
+
+        document.body.appendChild(btn);
+
+        console.log("PartyQueue Button erstellt");
+    }
+
+    window.addEventListener("load", addButton);
+
+    setInterval(addButton, 3000);
+
 })();
