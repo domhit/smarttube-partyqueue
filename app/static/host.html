@@ -5,16 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PartyQueue Host</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .archive-item{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 0;border-top:1px solid #2a3554}
+    .archive-item:first-child{border-top:0}.archive-active{border-left:4px solid #22c55e;padding-left:12px}.archive-item .actions{justify-content:flex-end}
+    @media(max-width:700px){.archive-item{display:block}.archive-item .actions{margin-top:10px;justify-content:flex-start}}
+  </style>
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.6</h1>
+  <h1>🎛️ PartyQueue V2.7</h1>
   <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
   <div id="panel" class="hidden">
     <div id="lock" class="banner"></div>
 
     <section class="card">
-      <h2>Aktive Party</h2>
+      <div class="editor-head"><h2>Aktive Party</h2><div class="actions"><button id="newParty">Neue Party</button><button id="cloneParty" class="secondary">Party klonen</button><button id="closeParty" class="danger">Party abschließen</button></div></div>
+      <div id="noParty" class="banner hidden"></div>
+      <div id="partyForm">
       <div class="row"><input id="partyName" class="grow"><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"> Grundplaylist aktiv</label></div>
       <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
       <div id="devices" class="checks"></div>
