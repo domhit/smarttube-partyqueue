@@ -12,7 +12,7 @@ def col(c,t,n):return any(r['name']==n for r in c.execute(f'PRAGMA table_info({t
 def init_db():
  with conn() as c:
   c.executescript("""
-  CREATE TABLE IF NOT EXISTS queue(id INTEGER PRIMARY KEY AUTOINCREMENT,video_id TEXT NOT NULL,title TEXT NOT NULL,channel TEXT DEFAULT '',thumbnail TEXT DEFAULT '',duration_seconds INTEGER DEFAULT 0,requested_by TEXT DEFAULT 'Gast',guest_id TEXT DEFAULT '',target_tv TEXT NOT NULL,position INTEGER NOT NULL,source TEXT DEFAULT 'request',status TEXT DEFAULT 'queued',party_id INTEGER,playlist_id INTEGER,votes INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,started_at TEXT,finished_at TEXT);
+  CREATE TABLE IF NOT EXISTS queue(id INTEGER PRIMARY KEY AUTOINCREMENT,video_id TEXT NOT NULL,title TEXT NOT NULL,channel TEXT DEFAULT '',thumbnail TEXT DEFAULT '',duration_seconds INTEGER DEFAULT 0,requested_by TEXT DEFAULT 'Gast',guest_id TEXT DEFAULT '',target_tv TEXT NOT NULL,position INTEGER NOT NULL,source TEXT DEFAULT 'request',status TEXT DEFAULT 'queued',party_id INTEGER,playlist_id INTEGER,votes INTEGER DEFAULT 0,admin_priority INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,started_at TEXT,finished_at TEXT);
   CREATE TABLE IF NOT EXISTS search_cache(query TEXT PRIMARY KEY,payload TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS playlists(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS playlist_items(id INTEGER PRIMARY KEY AUTOINCREMENT,playlist_id INTEGER NOT NULL,video_id TEXT NOT NULL,title TEXT NOT NULL,channel TEXT DEFAULT '',thumbnail TEXT DEFAULT '',duration_seconds INTEGER DEFAULT 0,enabled INTEGER DEFAULT 1,position INTEGER NOT NULL,added_from TEXT DEFAULT 'manual',created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(playlist_id,video_id),FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE);
@@ -23,7 +23,7 @@ def init_db():
   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   INSERT OR IGNORE INTO playlists(id,name) VALUES(1,'Party allgemein');
   """)
-  for n,t,d in [('guest_id','TEXT',"''"),('party_id','INTEGER','NULL'),('playlist_id','INTEGER','NULL'),('votes','INTEGER','0')]:
+  for n,t,d in [('guest_id','TEXT',"''"),('party_id','INTEGER','NULL'),('playlist_id','INTEGER','NULL'),('votes','INTEGER','0'),('admin_priority','INTEGER','0')]:
    if not col(c,'queue',n):c.execute(f'ALTER TABLE queue ADD COLUMN {n} {t} DEFAULT {d}')
   if not col(c,'parties','playlist_enabled'):c.execute('ALTER TABLE parties ADD COLUMN playlist_enabled INTEGER DEFAULT 1')
   if col(c,'base_play_history','base_item_id'):

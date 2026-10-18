@@ -14,6 +14,7 @@ D=settings.parsed_devices();IDS={x['id'] for x in D};clients=set();locks={};pb={
 class Add(BaseModel):video_id:Optional[str]=None;url:Optional[str]=None;requested_by:str='Gast';guest_id:str='';target_tv:Optional[str]=None
 class Auth(BaseModel):password:str
 class Tv(BaseModel):target_tv:str
+class QueueReorder(BaseModel):target_tv:str;ids:list[int]
 class Progress(BaseModel):target_tv:str;state:str;media_position:float=0;app_id:Optional[str]=None
 class Vote(BaseModel):guest_id:str
 class PartyPatch(BaseModel):name:Optional[str]=None;playlist_id:Optional[int]=None;allowed_devices:Optional[list[str]]=None;default_tv:Optional[str]=None;request_limit:Optional[int]=None;repeat_window:Optional[int]=None;queue_locked:Optional[bool]=None;upvote_sort:Optional[bool]=None;detect_external_skip:Optional[bool]=None;playlist_enabled:Optional[bool]=None
@@ -37,7 +38,7 @@ async def state():
  with conn() as c:
   pls=[dict(r) for r in c.execute('SELECT p.*,COUNT(i.id) item_count FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id GROUP BY p.id ORDER BY p.name')]
   if not p:return {'party':None,'playlists':pls,'queue':[],'current':{},'history':[],'playback':{},'quota':quota()}
-  q=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='queued' ORDER BY CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
+  q=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
  cm={x['target_tv']:x for x in cu};now=time.monotonic();play={}
  for tv,x in pb.items():
   pos=x['media_position']+(max(0,now-x['received']) if x['state']=='playing' else 0);du=float(cm.get(tv,{}).get('duration_seconds')or 0);play[tv]={**x,'media_position':min(pos,du) if du else pos}
@@ -60,7 +61,7 @@ async def nxt(tv):
  async with l:
   with conn() as c:
    if c.execute("SELECT 1 FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone():return False
-   r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' ORDER BY CASE WHEN ?=1 THEN votes END DESC,position,id LIMIT 1",(p['id'],tv,p['upvote_sort'])).fetchone()
+   r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id LIMIT 1",(p['id'],tv,p['upvote_sort'])).fetchone()
    if r:x=dict(r);c.execute("UPDATE queue SET status='playing',started_at=CURRENT_TIMESTAMP WHERE id=?",(x['id'],))
    else:
     b=base(c,p,tv)
@@ -77,13 +78,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.5.0',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.5.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.5.0'}
+async def health():return {'ok':True,'version':'2.5.1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -112,6 +113,31 @@ async def login(b:Auth):au(b.password);return {'ok':True}
 async def start(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);return {'started':await nxt(b.target_tv)}
 @app.post('/api/admin/skip')
 async def skip(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);await done(b.target_tv,'skipped');return {'ok':True}
+@app.post('/api/admin/queue/reorder')
+async def queue_reorder(b:QueueReorder,x_admin_password:str=Header(default='')):
+ au(x_admin_password);p=party();tv=tvok(b.target_tv,p)
+ with conn() as c:
+  valid={r['id'] for r in c.execute("SELECT id FROM queue WHERE party_id=? AND target_tv=? AND status='queued'",(p['id'],tv))}
+  if set(b.ids)!=valid:raise HTTPException(409,'Queue hat sich geändert. Bitte Ansicht neu laden.')
+  total=len(b.ids)
+  for index,qid in enumerate(b.ids):c.execute("UPDATE queue SET admin_priority=? WHERE id=?",(total-index,qid))
+ await cast();return {'ok':True}
+@app.post('/api/admin/queue/{qid}/next')
+async def queue_next(qid:int,x_admin_password:str=Header(default='')):
+ au(x_admin_password);p=party()
+ with conn() as c:
+  row=c.execute("SELECT target_tv FROM queue WHERE id=? AND party_id=? AND status='queued'",(qid,p['id'])).fetchone()
+  if not row:raise HTTPException(404,'Queue-Eintrag nicht gefunden')
+  top=c.execute("SELECT COALESCE(MAX(admin_priority),0)+1 n FROM queue WHERE party_id=? AND target_tv=? AND status='queued'",(p['id'],row['target_tv'])).fetchone()['n']
+  c.execute('UPDATE queue SET admin_priority=? WHERE id=?',(top,qid))
+ await cast();return {'ok':True}
+@app.delete('/api/admin/queue/{qid}')
+async def queue_delete(qid:int,x_admin_password:str=Header(default='')):
+ au(x_admin_password);p=party()
+ with conn() as c:
+  n=c.execute("DELETE FROM queue WHERE id=? AND party_id=? AND status='queued'",(qid,p['id'])).rowcount
+ if not n:raise HTTPException(404,'Queue-Eintrag nicht gefunden oder bereits gestartet')
+ await cast();return {'ok':True}
 @app.patch('/api/admin/party')
 async def patch(b:PartyPatch,x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party();d=b.model_dump(exclude_none=True)

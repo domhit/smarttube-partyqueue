@@ -1,17 +1,18 @@
-# SmartTube PartyQueue V2.5
+# SmartTube PartyQueue V2.5.1
 
-## Playlist-Verwaltung neu strukturiert
+## Behoben
 
-Die einer Party zugeordnete Grundplaylist und die im Adminbereich bearbeitete Playlist sind vollständig getrennt.
+- Fortschrittsbalken und Zeitanzeige in Gast- und Hostansicht wiederhergestellt.
+- Fortschritt läuft zwischen den MediaSession-Updates flüssig weiter.
 
-- **Aktive Party → Verwendete Grundplaylist** ändert sich erst mit **Party speichern**.
-- **Playlist-Verwaltung → Bearbeitete Playlist** kann unabhängig gewechselt werden.
-- Eine neue Playlist ist leer.
-- **Duplizieren** kopiert alle Titel in eine neue Playlist.
-- Playlists können umbenannt und gelöscht werden.
-- Einer Party zugeordnete Playlists können nicht gelöscht werden.
-- Titel können per einzelner YouTube-URL, YouTube-Playlist-Import oder aus dem Verlauf hinzugefügt werden.
-- Dropdowns zeigen die Titelanzahl an.
+## Queue-Management für den Host
+
+- Titel nach oben verschieben
+- Titel nach unten verschieben
+- Titel als Nächstes markieren
+- Titel aus der Queue entfernen
+
+Eine manuell sortierte Queue erhält Vorrang vor der Upvote-Sortierung. Neue, noch nicht manuell sortierte Wünsche bleiben dahinter weiterhin nach Upvotes und Eingangszeit sortiert.
 
 ## Update
 
@@ -22,4 +23,4 @@ docker compose down
 docker compose up -d --build
 ```
 
-Keine `.env`- oder Home-Assistant-Änderung nötig. Bestehende Daten werden weiterverwendet.
+Die Datenbank wird automatisch um `admin_priority` erweitert. Keine Änderung an `.env` oder Home Assistant nötig.
