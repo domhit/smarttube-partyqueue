@@ -95,13 +95,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.7.0',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.7.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.7.0'}
+async def health():return {'ok':True,'version':'2.7.1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')

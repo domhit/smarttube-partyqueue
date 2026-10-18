@@ -13,7 +13,7 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.7</h1>
+  <h1>🎛️ PartyQueue V2.7.1</h1>
   <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
   <div id="panel" class="hidden">
     <div id="lock" class="banner"></div>
@@ -26,6 +26,7 @@
       <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
       <div id="devices" class="checks"></div>
       <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div>
+      </div>
     </section>
 
     <section class="card">
@@ -54,6 +55,12 @@
       </div>
       <p class="muted">Reihenfolge per Griff ändern. Ausgewählte Titel können in eine andere Playlist kopiert oder verschoben werden.</p>
       <div id="editItems" class="sortable-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Partyarchiv</h2>
+      <p class="muted">Abgeschlossene Partys bleiben unverändert erhalten. Sie können exportiert, aber nicht wieder geöffnet werden.</p>
+      <div id="partyArchive"></div>
     </section>
 
     <section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section>
