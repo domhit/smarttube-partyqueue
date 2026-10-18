@@ -87,6 +87,13 @@ async def nxt(tv):
   await play(x);await cast();return True
 async def done(tv,st='played'):
  p=party();tv=tvok(tv,p)
+ # Ignore stale MediaSession positions from the previous title while the next
+ # SmartTube title is starting. Without this reset a manual skip can look like
+ # another external skip and cascade through the complete queue.
+ guard[tv]=time.monotonic()+settings.prestart_idle_guard
+ pb.pop(tv,None)
+ task=idle.pop(tv,None)
+ if task and not task.done():task.cancel()
  with conn() as c:n=c.execute("UPDATE queue SET status=?,finished_at=CURRENT_TIMESTAMP WHERE party_id=? AND target_tv=? AND status='playing'",(st,p['id'],tv)).rowcount
  if n:await cast();await nxt(tv)
 async def metadata(v=None,u=None):
@@ -95,13 +102,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.7.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.7.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.7.1'}
+async def health():return {'ok':True,'version':'2.7.2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')

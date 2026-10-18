@@ -13,7 +13,7 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.7.1</h1>
+  <h1>🎛️ PartyQueue V2.7.2</h1>
   <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
   <div id="panel" class="hidden">
     <div id="lock" class="banner"></div>
@@ -24,6 +24,8 @@
       <div id="partyForm">
       <div class="row"><input id="partyName" class="grow"><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"> Grundplaylist aktiv</label></div>
       <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
+      <div class="checks"><label><input id="detectExternalSkip" type="checkbox"> Externe Skip-Erkennung aktiv</label></div>
+      <p class="muted">Erkennt einen außerhalb der PartyQueue ausgelösten Titelsprung. Der Skip-Button funktioniert unabhängig von dieser Option.</p>
       <div id="devices" class="checks"></div>
       <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div>
       </div>
