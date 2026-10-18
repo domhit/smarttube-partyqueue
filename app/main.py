@@ -78,13 +78,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.5.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.5.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.5.1'}
+async def health():return {'ok':True,'version':'2.5.2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -97,8 +97,8 @@ async def add(b:Add):
  if p['queue_locked']:raise HTTPException(423,'Musikwünsche sind gesperrt')
  tv=tvok(b.target_tv,p);d=await metadata(b.video_id,b.url)
  with conn() as c:
-  if c.execute("SELECT 1 FROM queue WHERE party_id=? AND video_id=? AND status IN ('queued','playing')",(p['id'],d['video_id'])).fetchone():raise HTTPException(409,'Titel bereits eingeplant')
-  if p['repeat_window'] and c.execute("SELECT 1 FROM (SELECT video_id FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT ?) WHERE video_id=?",(p['id'],p['repeat_window'],d['video_id'])).fetchone():raise HTTPException(409,'Titel lief vor Kurzem bereits')
+  if c.execute("SELECT 1 FROM queue WHERE party_id=? AND target_tv=? AND video_id=? AND status IN ('queued','playing')",(p['id'],tv,d['video_id'])).fetchone():raise HTTPException(409,'Titel bereits eingeplant')
+  if p['repeat_window'] and c.execute("SELECT 1 FROM (SELECT video_id FROM queue WHERE party_id=? AND target_tv=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT ?) WHERE video_id=?",(p['id'],tv,p['repeat_window'],d['video_id'])).fetchone():raise HTTPException(409,'Titel lief vor Kurzem bereits')
   if p['request_limit'] and c.execute("SELECT COUNT(*) n FROM queue WHERE party_id=? AND guest_id=? AND status='queued'",(p['id'],b.guest_id)).fetchone()['n']>=p['request_limit']:raise HTTPException(429,f'Maximal {p["request_limit"]} offene Wünsche')
   pos=c.execute("SELECT COALESCE(MAX(position),0)+1 n FROM queue WHERE party_id=? AND target_tv=? AND status='queued'",(p['id'],tv)).fetchone()['n'];r=c.execute('INSERT INTO queue(video_id,title,channel,thumbnail,duration_seconds,requested_by,guest_id,target_tv,position,party_id) VALUES(?,?,?,?,?,?,?,?,?,?)',(d['video_id'],d['title'],d['channel'],d['thumbnail'],d['duration_seconds'],b.requested_by,b.guest_id,tv,pos,p['id']))
  await cast();await nxt(tv);return {'id':r.lastrowid,'position':pos}

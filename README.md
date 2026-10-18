@@ -1,18 +1,31 @@
-# SmartTube PartyQueue V2.5.1
+# SmartTube PartyQueue V2.5.2
 
-## Behoben
+## Neu
 
-- Fortschrittsbalken und Zeitanzeige in Gast- und Hostansicht wiederhergestellt.
-- Fortschritt läuft zwischen den MediaSession-Updates flüssig weiter.
+- YouTube-API-Verbrauch im Host-Dashboard wieder sichtbar
+- Suchaufrufe, geschätzte Rest-Suchen, Cache-Treffer, Playlist-Aufrufe, Fehler und Reset-Zeit
+- grün/gelb/rote Quota-Anzeige
+- Duplikat- und Wiederholungsschutz jetzt pro Party **und Ziel-TV**
+- derselbe Titel darf gleichzeitig auf unterschiedlichen TVs eingeplant werden
+- derselbe Titel bleibt auf demselben TV eindeutig
 
-## Queue-Management für den Host
+## Tampermonkey
 
-- Titel nach oben verschieben
-- Titel nach unten verschieben
-- Titel als Nächstes markieren
-- Titel aus der Queue entfernen
+- PartyQueue-Button weiterhin auf Watch-Seiten
+- PartyQueue-Button direkt an YouTube-Suchergebnissen
+- optionaler Rechtsklick auf einen YouTube-Videolink öffnet die Zielauswahl
+- `Shift + Rechtsklick` öffnet weiterhin das normale Browser-Kontextmenü
+- freigegebene Zielgeräte erscheinen als echte Buttons
+- bei nur einem freigegebenen TV wird ohne Dialog direkt hinzugefügt
+- zuletzt gewähltes Gerät wird grün hervorgehoben
+- Toasts statt blockierender Erfolgs-Alerts
+- kompatibel mit YouTubes SPA-Navigation
 
-Eine manuell sortierte Queue erhält Vorrang vor der Upvote-Sortierung. Neue, noch nicht manuell sortierte Wünsche bleiben dahinter weiterhin nach Upvotes und Eingangszeit sortiert.
+Vor Verwendung im Userscript weiterhin die Adresse anpassen:
+
+```javascript
+const PARTYQUEUE = 'http://partyqueue.local:8787';
+```
 
 ## Update
 
@@ -23,4 +36,4 @@ docker compose down
 docker compose up -d --build
 ```
 
-Die Datenbank wird automatisch um `admin_priority` erweitert. Keine Änderung an `.env` oder Home Assistant nötig.
+Keine Änderung an `.env`, Home Assistant oder SQLite nötig.
