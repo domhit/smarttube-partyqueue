@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube -> SmartTube PartyQueue
 // @namespace    smarttube-partyqueue
-// @version      2.5.2
+// @version      2.8.2
 // @description  Fügt YouTube-Videos und Suchergebnisse zur SmartTube PartyQueue hinzu
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -34,7 +34,8 @@
   function guestData() {
     let name = localStorage.partyqueue_name;
     if (!name) {
-      name = prompt('Dein Name?') || 'Gast';
+      name = (prompt('Dein Name?') || '').trim();
+      if (!name) throw new Error('Bitte zuerst einen Namen angeben');
       localStorage.partyqueue_name = name;
     }
     let guestId = localStorage.partyqueue_gid;

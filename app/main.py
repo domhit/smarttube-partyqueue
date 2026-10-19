@@ -20,7 +20,7 @@ from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableSty
 from .config import settings
 from .db import conn,init_db
 from .youtube import video_id,details,search,playlist,quota
-D=settings.parsed_devices();IDS={x['id'] for x in D};clients=set();locks={};pb={};guard={};idle={}
+D=settings.parsed_devices();IDS={x['id'] for x in D};clients=set();locks={};pb={};guard={};idle={};play_pending={}
 log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
 def debug_event(kind,tv=None,**data):
  global diag_seq
@@ -81,7 +81,7 @@ async def state():
  with conn() as c:
   pls=[dict(r) for r in c.execute('SELECT p.*,COUNT(i.id) item_count FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id GROUP BY p.id ORDER BY p.name')]
   if not p:return {'party':None,'devices':[],'all_devices':D,'playlists':pls,'queue':[],'current':{},'history':[],'playback':{},'quota':quota()}
-  q=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
+  q=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
  cm={x['target_tv']:x for x in cu};now=time.monotonic();play={}
  for tv,x in pb.items():
   pos=x['media_position']+(max(0,now-x['received']) if x['state']=='playing' else 0);du=float(cm.get(tv,{}).get('duration_seconds')or 0);play[tv]={**x,'media_position':min(pos,du) if du else pos}
@@ -92,14 +92,38 @@ async def cast():
   try:await w.send_json(s)
   except:dead.append(w)
  for w in dead:clients.discard(w)
-async def play(x):
- arm_start_guard(x['target_tv'],'play_request')
- debug_event('PLAY_REQUEST',x['target_tv'],queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'))
+async def send_play_webhook(x,attempt):
+ debug_event('PLAY_REQUEST',x['target_tv'],queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
  try:
   async with httpx.AsyncClient(timeout=15) as c:r=await c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package});r.raise_for_status()
-  debug_event('PLAY_WEBHOOK_OK',x['target_tv'],queue_id=x.get('id'),status_code=r.status_code)
+  debug_event('PLAY_WEBHOOK_OK',x['target_tv'],queue_id=x.get('id'),status_code=r.status_code,attempt=attempt);return True
  except Exception as e:
-  debug_event('PLAY_WEBHOOK_ERROR',x['target_tv'],queue_id=x.get('id'),error=repr(e));raise
+  debug_event('PLAY_WEBHOOK_ERROR',x['target_tv'],queue_id=x.get('id'),error=repr(e),attempt=attempt);return False
+
+async def play_watchdog(tv,queue_id,x):
+ try:
+  debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout)
+  await asyncio.sleep(settings.play_confirm_timeout)
+  pending=play_pending.get(tv)
+  if not pending or pending['queue_id']!=queue_id:return
+  arm_start_guard(tv,'play_retry');debug_event('PLAY_RETRY',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'))
+  await send_play_webhook(x,2)
+  await asyncio.sleep(settings.play_retry_timeout)
+  pending=play_pending.get(tv)
+  if pending and pending['queue_id']==queue_id:
+   debug_event('PLAY_CONFIRM_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'))
+   play_pending.pop(tv,None);await cast()
+ except asyncio.CancelledError:pass
+
+async def play(x):
+ tv=x['target_tv'];old=play_pending.pop(tv,None)
+ if old and old.get('task') and not old['task'].done():old['task'].cancel()
+ arm_start_guard(tv,'play_request');play_pending[tv]={'queue_id':x['id'],'video_id':x.get('video_id'),'task':None,'requested':time.monotonic()}
+ await send_play_webhook(x,1)
+ pending=play_pending.get(tv)
+ if pending and pending['queue_id']==x['id']:
+  task=asyncio.create_task(play_watchdog(tv,x['id'],dict(x)));pending['task']=task
+
 def base(c,p,tv):
  if not p['playlist_enabled'] or not p['playlist_id']:return None
  a=[dict(r) for r in c.execute('SELECT * FROM playlist_items WHERE playlist_id=? AND enabled=1',(p['playlist_id'],))]
@@ -132,13 +156,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.8.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.8.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.8.0'}
+async def health():return {'ok':True,'version':'2.8.2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -150,6 +174,8 @@ async def pp():
 async def sr(q:str):return await search(q)
 @app.post('/api/queue')
 async def add(b:Add):
+ b.requested_by=b.requested_by.strip()
+ if not b.requested_by or b.requested_by.lower()=='gast':raise HTTPException(400,'Bitte zuerst einen Namen angeben')
  p=party()
  if p['queue_locked']:raise HTTPException(423,'Musikwünsche sind gesperrt')
  tv=tvok(b.target_tv,p);d=await metadata(b.video_id,b.url)
@@ -164,6 +190,17 @@ async def vote(qid:int,b:Vote):
  with conn() as c:
   old=c.execute('SELECT 1 FROM votes WHERE queue_id=? AND guest_id=?',(qid,b.guest_id)).fetchone();c.execute('DELETE FROM votes WHERE queue_id=? AND guest_id=?',(qid,b.guest_id)) if old else c.execute('INSERT INTO votes VALUES(?,?,CURRENT_TIMESTAMP)',(qid,b.guest_id));c.execute('UPDATE queue SET votes=votes+? WHERE id=?',(-1 if old else 1,qid))
  await cast();return {'voted':not bool(old)}
+@app.post('/api/queue/{qid}/hype')
+async def hype(qid:int,b:Vote):
+ if not b.guest_id.strip():raise HTTPException(400,'Gast-ID fehlt')
+ with conn() as c:
+  row=c.execute("SELECT id,status FROM queue WHERE id=?",(qid,)).fetchone()
+  if not row or row['status']!='playing':raise HTTPException(409,'Titel läuft nicht mehr')
+  old=c.execute('SELECT 1 FROM hype_votes WHERE queue_id=? AND guest_id=?',(qid,b.guest_id)).fetchone()
+  c.execute('DELETE FROM hype_votes WHERE queue_id=? AND guest_id=?',(qid,b.guest_id)) if old else c.execute('INSERT INTO hype_votes VALUES(?,?,CURRENT_TIMESTAMP)',(qid,b.guest_id))
+  total=c.execute('SELECT COUNT(*) n FROM hype_votes WHERE queue_id=?',(qid,)).fetchone()['n']
+ await cast();return {'hyped':not bool(old),'hype_total':total}
+
 @app.post('/api/admin/login')
 async def login(b:Auth):au(b.password);return {'ok':True}
 @app.post('/api/admin/start')
@@ -222,7 +259,9 @@ async def party_archive(x_admin_password:str=Header(default='')):
   (SELECT channel FROM queue qa WHERE qa.party_id=p.id AND qa.status IN ('played','skipped') AND COALESCE(qa.channel,'')<>'' GROUP BY channel ORDER BY COUNT(*) DESC,channel LIMIT 1) top_artist,
   (SELECT COUNT(*) FROM queue qa WHERE qa.party_id=p.id AND qa.status IN ('played','skipped') AND qa.channel=(SELECT channel FROM queue qaa WHERE qaa.party_id=p.id AND qaa.status IN ('played','skipped') AND COALESCE(qaa.channel,'')<>'' GROUP BY channel ORDER BY COUNT(*) DESC,channel LIMIT 1)) top_artist_count,
   (SELECT title FROM queue qv WHERE qv.party_id=p.id AND qv.status IN ('played','skipped') ORDER BY votes DESC,title LIMIT 1) top_voted_title,
-  COALESCE((SELECT votes FROM queue qv WHERE qv.party_id=p.id AND qv.status IN ('played','skipped') ORDER BY votes DESC,title LIMIT 1),0) top_voted_votes
+  COALESCE((SELECT votes FROM queue qv WHERE qv.party_id=p.id AND qv.status IN ('played','skipped') ORDER BY votes DESC,title LIMIT 1),0) top_voted_votes,
+  (SELECT title FROM queue qh WHERE qh.party_id=p.id AND qh.status IN ('played','skipped') ORDER BY (SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=qh.id) DESC,title LIMIT 1) top_hype_title,
+  COALESCE((SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=(SELECT id FROM queue qh WHERE qh.party_id=p.id AND qh.status IN ('played','skipped') ORDER BY (SELECT COUNT(*) FROM hype_votes hv2 WHERE hv2.queue_id=qh.id) DESC,title LIMIT 1)),0) top_hype_votes
  FROM parties p LEFT JOIN queue q ON q.party_id=p.id
  GROUP BY p.id ORDER BY p.started_at DESC,p.id DESC
  """)]
@@ -236,7 +275,7 @@ async def party_delete(pid:int,x_admin_password:str=Header(default='')):
   if p['active']:raise HTTPException(409,'Die aktive Party kann nicht gelöscht werden')
   qids=[r['id'] for r in c.execute('SELECT id FROM queue WHERE party_id=?',(pid,))]
   if qids:
-   ph=','.join('?' for _ in qids);c.execute(f'DELETE FROM votes WHERE queue_id IN ({ph})',qids)
+   ph=','.join('?' for _ in qids);c.execute(f'DELETE FROM votes WHERE queue_id IN ({ph})',qids);c.execute(f'DELETE FROM hype_votes WHERE queue_id IN ({ph})',qids)
   c.execute('DELETE FROM base_play_history WHERE party_id=?',(pid,))
   c.execute('DELETE FROM queue WHERE party_id=?',(pid,))
   c.execute('DELETE FROM parties WHERE id=?',(pid,))
@@ -248,6 +287,9 @@ async def party_close(x_admin_password:str=Header(default='')):
  if not p:raise HTTPException(409,'Es läuft keine Party')
  with conn() as c:close_party(c,p)
  pb.clear();guard.clear()
+ for item in play_pending.values():
+  if item.get('task') and not item['task'].done():item['task'].cancel()
+ play_pending.clear()
  for task in idle.values():
   if not task.done():task.cancel()
  idle.clear();await cast();return {'ok':True,'party_id':p['id']}
@@ -267,6 +309,9 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
    values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':b.default_tv or settings.default_tv,'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
   r=c.execute("INSERT INTO parties(name,playlist_id,allowed_devices,default_tv,request_limit,repeat_window,queue_locked,upvote_sort,detect_external_skip,playlist_enabled,active,started_at,ended_at) VALUES(?,?,?,?,?,?,0,?,?,?,?,CURRENT_TIMESTAMP,NULL)",(name,values['playlist_id'],values['allowed_devices'],values['default_tv'],values['request_limit'],values['repeat_window'],values['upvote_sort'],values['detect_external_skip'],values['playlist_enabled'],1))
  pb.clear();guard.clear()
+ for item in play_pending.values():
+  if item.get('task') and not item['task'].done():item['task'].cancel()
+ play_pending.clear()
  for task in idle.values():
   if not task.done():task.cancel()
  idle.clear();await cast();return {'ok':True,'id':r.lastrowid}
@@ -274,6 +319,13 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
 async def progress(b:Progress,x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_pos=float(old.get('media_position',0) or 0);new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
  pb[tv]={'state':b.state,'media_position':new_pos,'app_id':b.app_id,'received':now}
+ pending=play_pending.get(tv)
+ if pending and b.state=='playing' and b.app_id==settings.smarttube_package:
+  if new_pos<=settings.play_confirm_max_position:
+   play_pending.pop(tv,None)
+   if pending.get('task') and not pending['task'].done():pending['task'].cancel()
+   debug_event('PLAY_CONFIRMED',tv,queue_id=pending['queue_id'],video_id=pending.get('video_id'),position=round(new_pos,3),latency=round(now-pending['requested'],3))
+  else:debug_event('PLAY_CONFIRM_REJECTED',tv,queue_id=pending['queue_id'],position=round(new_pos,3),max_position=settings.play_confirm_max_position)
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
  debug_event('PROGRESS',tv,state=b.state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
  if r and b.state=='playing' and b.app_id==settings.smarttube_package:
@@ -301,7 +353,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'2.8.0','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'2.8.2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
@@ -433,15 +485,15 @@ def recap_html(p,rows):
   n=(r.get('requested_by') or 'Gast').strip() or 'Gast';requesters[n]=requesters.get(n,0)+1
  for r in rows:
   n=(r.get('channel') or 'Unbekannt').strip() or 'Unbekannt';artists[n]=artists.get(n,0)+1
- top_req=max(requesters.items(),key=lambda x:(x[1],x[0])) if requesters else ('–',0);top_artist=max(artists.items(),key=lambda x:(x[1],x[0])) if artists else ('–',0);top_vote=max(rows,key=lambda r:(r.get('votes') or 0,r.get('title') or''),default=None);votes=sum(int(r.get('votes') or 0) for r in rows)
+ top_req=max(requesters.items(),key=lambda x:(x[1],x[0])) if requesters else ('–',0);top_artist=max(artists.items(),key=lambda x:(x[1],x[0])) if artists else ('–',0);top_vote=max(rows,key=lambda r:(r.get('votes') or 0,r.get('title') or''),default=None);votes=sum(int(r.get('votes') or 0) for r in rows);hypes=sum(int(r.get('hypes') or 0) for r in rows);top_hype=max(rows,key=lambda r:(r.get('hypes') or 0,r.get('title') or''),default=None)
  date=(start or local_time(p.get('started_at')));date_text=date.strftime('%d.%m.%Y') if date else 'ohne Datum';start_text=start.strftime('%H:%M Uhr') if start else 'unbekannter Uhrzeit'
- cards=[('🎵','Titel gespielt',len(played)),('🎤','Wünsche',len(requests)),('👍','Upvotes',votes),('👥','Wunschgeber',len(requesters)),('⏱️','Partydauer',duration_text(seconds)),('⏭️','Übersprungen',len(skipped))]
+ cards=[('🎵','Titel gespielt',len(played)),('🎤','Wünsche',len(requests)),('👍','Upvotes',votes),('👥','Wunschgeber',len(requesters)),('⏱️','Partydauer',duration_text(seconds)),('⏭️','Übersprungen',len(skipped)),('🔥','Hypes',hypes)]
  cards_html=''.join(f'<div class="stat"><span>{i}</span><strong>{safe(v)}</strong><small>{safe(n)}</small></div>' for i,n,v in cards)
- records=f'<div class="records"><div><span>🏆 Meiste Wünsche</span><strong>{safe(top_req[0])}</strong><small>{top_req[1]} Wünsche</small></div><div><span>🔥 Meiste Upvotes</span><strong>{safe(top_vote["title"]) if top_vote else "–"}</strong><small>{int(top_vote.get("votes") or 0) if top_vote else 0} Votes</small></div><div><span>🎸 Top-Künstler/Kanal</span><strong>{safe(top_artist[0])}</strong><small>{top_artist[1]} Titel</small></div><div><span>📻 Musikmix</span><strong>{len(requests)} Wünsche / {len(bases)} Basis</strong><small>{len(rows)} Titel insgesamt</small></div></div>'
+ records=f'<div class="records"><div><span>🏆 Meiste Wünsche</span><strong>{safe(top_req[0])}</strong><small>{top_req[1]} Wünsche</small></div><div><span>🔥 Meiste Upvotes</span><strong>{safe(top_vote["title"]) if top_vote else "–"}</strong><small>{int(top_vote.get("votes") or 0) if top_vote else 0} Votes</small></div><div><span>🎸 Top-Künstler/Kanal</span><strong>{safe(top_artist[0])}</strong><small>{top_artist[1]} Titel</small></div><div><span>🔥 Hype des Abends</span><strong>{safe(top_hype['title']) if top_hype else '–'}</strong><small>{int(top_hype.get('hypes') or 0) if top_hype else 0} Hypes</small></div><div><span>📻 Musikmix</span><strong>{len(requests)} Wünsche / {len(bases)} Basis</strong><small>{len(rows)} Titel insgesamt</small></div></div>'
  tracks=[]
  for i,r in enumerate(rows,1):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '–';source='Wunsch' if r['source']=='request' else 'Grundplaylist';status='übersprungen' if r['status']=='skipped' else 'gespielt';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist'
-  tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
+  tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>🔥 {int(r.get('hypes') or 0)}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
  ranking=''.join(f'<li><span>{safe(n)}</span><strong>{v}</strong></li>' for n,v in sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10]) or '<li><span>Keine Wünsche</span><strong>0</strong></li>'
  return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V2.7</footer></main></body></html>"""
 
@@ -454,14 +506,14 @@ def recap_pdf(p,rows):
   n=(r.get('requested_by') or 'Gast').strip() or 'Gast';requesters[n]=requesters.get(n,0)+1
  for r in rows:
   n=(r.get('channel') or 'Unbekannt').strip() or 'Unbekannt';artists[n]=artists.get(n,0)+1
- top_req=max(requesters.items(),key=lambda x:(x[1],x[0])) if requesters else ('-',0);top_artist=max(artists.items(),key=lambda x:(x[1],x[0])) if artists else ('-',0);top_vote=max(rows,key=lambda r:(r.get('votes') or 0,r.get('title') or''),default=None);votes=sum(int(r.get('votes') or 0) for r in rows);date_text=start.strftime('%d.%m.%Y') if start else 'ohne Datum';start_text=start.strftime('%H:%M Uhr') if start else 'unbekannter Uhrzeit'
+ top_req=max(requesters.items(),key=lambda x:(x[1],x[0])) if requesters else ('-',0);top_artist=max(artists.items(),key=lambda x:(x[1],x[0])) if artists else ('-',0);top_vote=max(rows,key=lambda r:(r.get('votes') or 0,r.get('title') or''),default=None);votes=sum(int(r.get('votes') or 0) for r in rows);hypes=sum(int(r.get('hypes') or 0) for r in rows);top_hype=max(rows,key=lambda r:(r.get('hypes') or 0,r.get('title') or''),default=None);date_text=start.strftime('%d.%m.%Y') if start else 'ohne Datum';start_text=start.strftime('%H:%M Uhr') if start else 'unbekannter Uhrzeit'
  story=[Paragraph(xml_escape(p['name']),styles['RecapTitle']),Paragraph(f"Hier ist die Playlist unserer <b>{xml_escape(p['name'])}</b> vom <b>{date_text}</b>.<br/>Losgelegt haben wir um <b>{start_text}</b> und <b>{duration_text(seconds)}</b> durchgehalten.<br/>Danke fuer den schoenen Abend!",styles['Intro'])]
- stats=[['Titel gespielt',str(len(played)),'Wuensche',str(len(requests))],['Upvotes',str(votes),'Wunschgeber',str(len(requesters))],['Partydauer',duration_text(seconds),'Uebersprungen',str(len(skipped))]];t=Table(stats,colWidths=[36*mm,25*mm,36*mm,35*mm],hAlign='CENTER');t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef2ff')),('TEXTCOLOR',(0,0),(-1,-1),colors.HexColor('#172554')),('FONTNAME',(0,0),(-1,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.4,colors.HexColor('#cbd5e1')),('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#64748b')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(1,-1),'CENTER'),('ALIGN',(3,0),(3,-1),'CENTER'),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]));story.extend([t,Spacer(1,5*mm),Paragraph('Rekorde',styles['Section'])])
- record_data=[['Meiste Wuensche',f'{top_req[0]} ({top_req[1]})'],['Meiste Upvotes',f"{top_vote['title']} ({int(top_vote.get('votes') or 0)})" if top_vote else '-'],['Top-Kuenstler/Kanal',f'{top_artist[0]} ({top_artist[1]})']];rt=Table(record_data,colWidths=[48*mm,112*mm]);rt.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(0,-1),colors.white),('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.4,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]));story.extend([rt,Spacer(1,4*mm),Paragraph('Wunschgeber-Ranking',styles['Section'])])
+ stats=[['Titel gespielt',str(len(played)),'Wuensche',str(len(requests))],['Upvotes',str(votes),'Wunschgeber',str(len(requesters))],['Partydauer',duration_text(seconds),'Hypes',str(hypes)]];t=Table(stats,colWidths=[36*mm,25*mm,36*mm,35*mm],hAlign='CENTER');t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef2ff')),('TEXTCOLOR',(0,0),(-1,-1),colors.HexColor('#172554')),('FONTNAME',(0,0),(-1,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.4,colors.HexColor('#cbd5e1')),('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#64748b')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(1,-1),'CENTER'),('ALIGN',(3,0),(3,-1),'CENTER'),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]));story.extend([t,Spacer(1,5*mm),Paragraph('Rekorde',styles['Section'])])
+ record_data=[['Meiste Wuensche',f'{top_req[0]} ({top_req[1]})'],['Meiste Upvotes',f"{top_vote['title']} ({int(top_vote.get('votes') or 0)})" if top_vote else '-'],['Top-Kuenstler/Kanal',f'{top_artist[0]} ({top_artist[1]})'],['Hype des Abends',f"{top_hype['title']} ({int(top_hype.get('hypes') or 0)})" if top_hype else '-']];rt=Table(record_data,colWidths=[48*mm,112*mm]);rt.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(0,-1),colors.white),('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.4,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]));story.extend([rt,Spacer(1,4*mm),Paragraph('Wunschgeber-Ranking',styles['Section'])])
  rank=[['#','Name','Wuensche']]+[[str(i),xml_escape(n),str(v)] for i,(n,v) in enumerate(sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10],1)];rankt=Table(rank,colWidths=[12*mm,120*mm,28*mm],repeatRows=1);rankt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2563eb')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.35,colors.HexColor('#cbd5e1')),('ALIGN',(0,0),(0,-1),'CENTER'),('ALIGN',(2,0),(2,-1),'CENTER'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.extend([rankt,PageBreak(),Paragraph('Unsere Playlist',styles['Section'])])
  tracks=[['#','Zeit','Titel / Kanal','Wunschgeber','Votes']]
  for i,r in enumerate(rows,1):
-  d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
+  d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status} - Hype {int(r.get('hypes') or 0)}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
  tt=Table(tracks,colWidths=[10*mm,16*mm,81*mm,37*mm,16*mm],repeatRows=1);tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(0,0),(1,-1),'CENTER'),('ALIGN',(4,0),(4,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]));story.append(tt)
  def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V2.8.0');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
  doc.build(story,onFirstPage=footer,onLaterPages=footer);out.seek(0);return out
@@ -472,7 +524,7 @@ async def export(pid:int,fmt:str,password:str='',x_admin_password:str=Header(def
  with conn() as c:
   pr=c.execute('SELECT * FROM parties WHERE id=?',(pid,)).fetchone()
   if not pr:raise HTTPException(404,'Party nicht gefunden')
-  p=dict(pr);rows=[dict(r) for r in c.execute("SELECT created_at,started_at,finished_at,title,channel,thumbnail,duration_seconds,video_id,source,requested_by,votes,target_tv,status FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY COALESCE(started_at,created_at),id",(pid,))]
+  p=dict(pr);rows=[dict(r) for r in c.execute("SELECT queue.created_at,queue.started_at,queue.finished_at,queue.title,queue.channel,queue.thumbnail,queue.duration_seconds,queue.video_id,queue.source,queue.requested_by,queue.votes,queue.target_tv,queue.status,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY COALESCE(started_at,created_at),id",(pid,))]
  if fmt=='json':return StreamingResponse(io.BytesIO(json.dumps({'party':p,'tracks':rows},ensure_ascii=False,indent=2).encode()),media_type='application/json')
  if fmt=='csv':
   o=io.StringIO();w=csv.DictWriter(o,fieldnames=rows[0].keys() if rows else ['title']);w.writeheader();w.writerows(rows);return StreamingResponse(io.BytesIO(o.getvalue().encode('utf-8-sig')),media_type='text/csv')

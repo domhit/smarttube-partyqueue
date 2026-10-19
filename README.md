@@ -1,4 +1,4 @@
-# SmartTube PartyQueue V2.7.1
+# SmartTube PartyQueue V2.8.2
 
 Stabilitäts-Fix auf Basis des produktiv getesteten V2.7.0-Stands. Party-Lifecycle, Archiv, Recap, Playlist-Verwaltung und Multi-TV bleiben erhalten. Die Playback-Entscheidungen werden zusätzlich protokolliert und im Host-Frontend dargestellt.
 
@@ -87,3 +87,10 @@ IDLE_IGNORED_GUARD
 ```
 
 Während der Guard-Zeit darf für den neu gestarteten Titel kein `DONE reason=idle_fallback` erscheinen.
+
+
+### V2.8.2
+- Pflichtname vor Musikwunsch (Frontend und API)
+- Hype-Button fuer laufende Titel, ein Toggle pro Gast und Titel
+- Hype in Host, Archiv, HTML- und PDF-Recap
+- Playback-Start-Watchdog mit einmaligem Retry und Diagnoseevents

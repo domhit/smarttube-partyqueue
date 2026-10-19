@@ -19,6 +19,7 @@ def init_db():
   CREATE TABLE IF NOT EXISTS base_play_history(id INTEGER PRIMARY KEY AUTOINCREMENT,target_tv TEXT NOT NULL,playlist_item_id INTEGER NOT NULL,party_id INTEGER,played_at TEXT DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS parties(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,playlist_id INTEGER,allowed_devices TEXT NOT NULL,default_tv TEXT NOT NULL,request_limit INTEGER DEFAULT 3,repeat_window INTEGER DEFAULT 20,queue_locked INTEGER DEFAULT 0,upvote_sort INTEGER DEFAULT 1,detect_external_skip INTEGER DEFAULT 0,playlist_enabled INTEGER DEFAULT 1,active INTEGER DEFAULT 0,started_at TEXT DEFAULT CURRENT_TIMESTAMP,ended_at TEXT);
   CREATE TABLE IF NOT EXISTS votes(queue_id INTEGER,guest_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(queue_id,guest_id));
+  CREATE TABLE IF NOT EXISTS hype_votes(queue_id INTEGER,guest_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(queue_id,guest_id));
   CREATE TABLE IF NOT EXISTS quota_usage(quota_date TEXT PRIMARY KEY,search_api_calls INTEGER DEFAULT 0,search_cache_hits INTEGER DEFAULT 0,search_failures INTEGER DEFAULT 0,quota_exceeded INTEGER DEFAULT 0,playlist_api_calls INTEGER DEFAULT 0,last_search_at TEXT);
   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   INSERT OR IGNORE INTO playlists(id,name) VALUES(1,'Party allgemein');
