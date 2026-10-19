@@ -1,52 +1,53 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PartyQueue Host</title>
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>PartyQueue Host</title>
+<link href="/static/style.css" rel="stylesheet"/>
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.7.1</h1>
-  <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
-  <div id="panel" class="hidden">
-    <div id="lock" class="banner"></div>
-    <section class="card">
-      <div class="editor-head"><h2>Aktive Party</h2><div class="actions"><button id="newParty">Neue Party</button><button id="cloneParty" class="secondary">Party klonen</button><button id="closeParty" class="danger">Party abschließen</button></div></div><div id="noParty" class="banner hidden"></div><div id="partyForm">
-      <div class="row"><input id="partyName" class="grow"><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"> Grundplaylist aktiv</label></div>
-      <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
-      <div class="checks"><label><input id="detectExternalSkip" type="checkbox"> Externe Skip-Erkennung aktiv</label></div>
-      <div id="devices" class="checks"></div>
-      <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div></div>
-    </section>
-    <section class="card"><h2>YouTube-API</h2><div id="quotaSummary"></div><div class="quota-track"><div id="quotaBar"></div></div><div id="quotaDetails" class="muted"></div></section>
-    <section class="card">
-      <h2>Abspieler & Wunschqueue</h2>
-      <div class="row"><select id="tv"></select><button id="start">Start</button><button id="skip">⏭ Skip</button></div>
-      <div id="current"></div>
-      <p class="muted">Queue per Griff verschieben. Die Pfeile bleiben als Touch-Fallback erhalten.</p>
-      <div id="queue" class="sortable-list"></div>
-    </section>
-    <section class="card">
-      <div class="editor-head"><div><h2>Playlist-Verwaltung</h2><span id="editInfo" class="tag"></span></div><select id="editPlaylist"></select></div>
-      <div class="actions"><button id="newPlaylist">Neu</button><button id="clonePlaylist">Duplizieren</button><button id="renamePlaylist">Umbenennen</button><button id="deletePlaylist" class="danger">Löschen</button></div>
-      <div class="row"><input id="videoUrl" class="grow" placeholder="YouTube-Video-URL"><button id="addVideo">Titel hinzufügen</button></div>
-      <div class="row"><input id="importUrl" class="grow" placeholder="YouTube-Playlist-URL"><button id="importPlaylist">Importieren</button></div>
-      <div class="playlist-tools">
-        <input id="playlistFilter" class="grow" placeholder="Titel oder Kanal filtern">
-        <label><input id="selectAllVisible" type="checkbox"> Sichtbare auswählen</label>
-        <select id="targetPlaylist"></select>
-        <button id="copySelected">Kopieren</button>
-        <button id="moveSelected" class="secondary">Verschieben</button>
-      </div>
-      <p class="muted">Titel per Griff sortieren. Bei aktivem Filter ist Drag-and-drop deaktiviert.</p>
-      <div id="editItems" class="sortable-list"></div>
-    </section>
-    <section class="card debug-card"><div class="editor-head"><div><h2>Playback-Diagnose</h2><span id="debugStatus" class="tag">lädt …</span></div><div class="actions"><select id="debugTv"><option value="">Alle TVs</option></select><label><input id="debugAuto" type="checkbox" checked> Live</label><button id="debugRefresh" class="secondary">Aktualisieren</button><button id="debugCopy" class="secondary">JSON kopieren</button><button id="debugClear" class="danger">Leeren</button></div></div><div id="debugDevices" class="debug-devices"></div><p class="muted">Zeigt die letzten 500 Playback-Ereignisse im Arbeitsspeicher. Die gleichen Ereignisse erscheinen mit <code>[PLAYBACK_DEBUG]</code> in den Docker-Logs.</p><div class="debug-table-wrap"><table class="debug-table"><thead><tr><th>Zeit</th><th>TV</th><th>Ereignis</th><th>Details</th></tr></thead><tbody id="debugEvents"></tbody></table></div></section>
-    <section class="card"><h2>Partyarchiv</h2><p class="muted">Abgeschlossene Partys bleiben unverändert erhalten und können nicht wieder geöffnet werden.</p><div id="partyArchive"></div></section>
-    <section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section>
-  </div>
+<h1>🎛️ PartyQueue V2.7.2</h1>
+<section class="card"><div class="row"><input class="grow" id="pw" placeholder="Admin-Passwort" type="password"/><button id="login">Anmelden</button></div></section>
+<div class="hidden" id="panel">
+<div class="banner" id="lock"></div><nav aria-label="Host-Bereiche" class="host-tabs" role="tablist"><button aria-selected="true" class="host-tab active" data-tab="party" role="tab" type="button">Party</button><button aria-selected="false" class="host-tab" data-tab="playlist" role="tab" type="button">Playlist</button><button aria-selected="false" class="host-tab" data-tab="archive" role="tab" type="button">Archiv</button><button aria-selected="false" class="host-tab" data-tab="debug" role="tab" type="button">Debug</button></nav><div class="tab-page active" data-tab-page="party" role="tabpanel"><section class="card">
+<div class="editor-head"><h2>Aktive Party</h2><div class="actions"><button id="newParty">Neue Party</button><button class="secondary" id="cloneParty">Party klonen</button><button class="danger" id="closeParty">Party abschließen</button></div></div><div class="banner hidden" id="noParty"></div><div id="partyForm">
+<div class="row"><input class="grow" id="partyName"/><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"/> Grundplaylist aktiv</label></div>
+<div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" min="0" type="number"/></label><label>Wiederholung <input id="repeat" min="0" type="number"/></label></div>
+<div class="checks"><label><input id="detectExternalSkip" type="checkbox"/> Externe Skip-Erkennung aktiv</label></div>
+<div class="checks" id="devices"></div>
+<div class="actions"><button id="saveParty">Party speichern</button><button class="secondary" id="toggleLock"></button></div></div>
+</section><section class="card"><h2>YouTube-API</h2><div id="quotaSummary"></div><div class="quota-track"><div id="quotaBar"></div></div><div class="muted" id="quotaDetails"></div></section><section class="card">
+<h2>Abspieler &amp; Wunschqueue</h2>
+<div class="row"><select id="tv"></select><button id="start">Start</button><button id="skip">⏭ Skip</button></div>
+<div id="current"></div>
+<p class="muted">Queue per Griff verschieben. Die Pfeile bleiben als Touch-Fallback erhalten.</p>
+<div class="sortable-list" id="queue"></div>
+</section></div><div class="tab-page" data-tab-page="playlist" role="tabpanel"><section class="card">
+<div class="editor-head"><div><h2>Playlist-Verwaltung</h2><span class="tag" id="editInfo"></span></div><select id="editPlaylist"></select></div>
+<div class="actions"><button id="newPlaylist">Neu</button><button id="clonePlaylist">Duplizieren</button><button id="renamePlaylist">Umbenennen</button><button class="danger" id="deletePlaylist">Löschen</button></div>
+<div class="row"><input class="grow" id="videoUrl" placeholder="YouTube-Video-URL"/><button id="addVideo">Titel hinzufügen</button></div>
+<div class="row"><input class="grow" id="importUrl" placeholder="YouTube-Playlist-URL"/><button id="importPlaylist">Importieren</button></div>
+<div class="playlist-tools">
+<input class="grow" id="playlistFilter" placeholder="Titel oder Kanal filtern"/>
+<label><input id="selectAllVisible" type="checkbox"/> Sichtbare auswählen</label>
+<select id="targetPlaylist"></select>
+<button id="copySelected">Kopieren</button>
+<button class="secondary" id="moveSelected">Verschieben</button>
+</div>
+<p class="muted">Titel per Griff sortieren. Bei aktivem Filter ist Drag-and-drop deaktiviert.</p>
+<div class="sortable-list" id="editItems"></div>
+</section></div><div class="tab-page" data-tab-page="archive" role="tabpanel"><section class="card"><h2>Partyarchiv</h2><p class="muted">Abgeschlossene Partys bleiben unverändert erhalten und können nicht wieder geöffnet werden.</p><div id="partyArchive"></div></section><section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section></div><div class="tab-page" data-tab-page="debug" role="tabpanel"><section class="card debug-card"><div class="editor-head"><div><h2>Playback-Diagnose</h2><span class="tag" id="debugStatus">lädt …</span></div><div class="actions"><select id="debugTv"><option value="">Alle TVs</option></select><label><input checked="" id="debugAuto" type="checkbox"/> Live</label><button class="secondary" id="debugRefresh">Aktualisieren</button><button class="secondary" id="debugCopy">JSON kopieren</button><button class="danger" id="debugClear">Leeren</button></div></div><div class="debug-devices" id="debugDevices"></div><p class="muted">Zeigt die letzten 500 Playback-Ereignisse im Arbeitsspeicher. Die gleichen Ereignisse erscheinen mit <code>[PLAYBACK_DEBUG]</code> in den Docker-Logs.</p><div class="debug-table-wrap"><table class="debug-table"><thead><tr><th>Zeit</th><th>TV</th><th>Ereignis</th><th>Details</th></tr></thead><tbody id="debugEvents"></tbody></table></div></section></div>
+
+
+
+
+
+
+
+</div>
 </main>
 <div id="toast"></div>
 <script src="/static/host.js"></script>
