@@ -23,6 +23,9 @@ class PlaylistRename(BaseModel):name:str
 class PlaylistClone(BaseModel):name:str
 class PlaylistAdd(BaseModel):playlist_id:int;video_id:Optional[str]=None;url:Optional[str]=None;history_id:Optional[int]=None
 class PlaylistImport(BaseModel):playlist_id:int;playlist:str
+class PlaylistReorder(BaseModel):playlist_id:int;ids:list[int]
+class PlaylistBulk(BaseModel):source_playlist_id:int;target_playlist_id:int;item_ids:list[int];mode:str='copy'
+class PlaylistItemPatch(BaseModel):enabled:bool
 def au(x):
  if not secrets.compare_digest(x or'',settings.admin_password):raise HTTPException(401,'Nicht autorisiert')
 def party():
@@ -78,13 +81,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.5.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.6.0',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.5.2'}
+async def health():return {'ok':True,'version':'2.6.0'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -215,6 +218,42 @@ async def plimport(b:PlaylistImport,x_admin_password:str=Header(default='')):
 async def pldelitem(iid:int,x_admin_password:str=Header(default='')):
  au(x_admin_password)
  with conn() as c:c.execute('DELETE FROM playlist_items WHERE id=?',(iid,))
+ await cast();return {'ok':True}
+@app.post('/api/admin/playlists/reorder')
+async def playlist_reorder(b:PlaylistReorder,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ with conn() as c:
+  valid={r['id'] for r in c.execute('SELECT id FROM playlist_items WHERE playlist_id=?',(b.playlist_id,))}
+  if set(b.ids)!=valid or len(b.ids)!=len(valid):raise HTTPException(409,'Playlist hat sich geändert. Bitte Ansicht neu laden.')
+  for position,item_id in enumerate(b.ids,1):c.execute('UPDATE playlist_items SET position=? WHERE id=? AND playlist_id=?',(position,item_id,b.playlist_id))
+ await cast();return {'ok':True}
+@app.post('/api/admin/playlists/bulk')
+async def playlist_bulk(b:PlaylistBulk,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ if b.mode not in ('copy','move'):raise HTTPException(400,'Modus muss copy oder move sein')
+ if b.source_playlist_id==b.target_playlist_id:raise HTTPException(400,'Quell- und Zielplaylist müssen unterschiedlich sein')
+ if not b.item_ids:raise HTTPException(400,'Keine Titel ausgewählt')
+ copied=0;skipped=0
+ with conn() as c:
+  if not c.execute('SELECT 1 FROM playlists WHERE id=?',(b.target_playlist_id,)).fetchone():raise HTTPException(404,'Zielplaylist nicht gefunden')
+  ph=','.join('?' for _ in b.item_ids)
+  rows=[dict(r) for r in c.execute(f'SELECT * FROM playlist_items WHERE playlist_id=? AND id IN ({ph})',(b.source_playlist_id,*b.item_ids))]
+  if len(rows)!=len(set(b.item_ids)):raise HTTPException(409,'Mindestens ein ausgewählter Titel wurde zwischenzeitlich geändert')
+  pos=c.execute('SELECT COALESCE(MAX(position),0) n FROM playlist_items WHERE playlist_id=?',(b.target_playlist_id,)).fetchone()['n']
+  for row in sorted(rows,key=lambda x:(x['position'],x['id'])):
+   pos+=1
+   inserted=c.execute("INSERT OR IGNORE INTO playlist_items(playlist_id,video_id,title,channel,thumbnail,duration_seconds,enabled,position,added_from) VALUES(?,?,?,?,?,?,?,?,?)",(b.target_playlist_id,row['video_id'],row['title'],row['channel'],row['thumbnail'],row['duration_seconds'],row['enabled'],pos,'copy' if b.mode=='copy' else 'move')).rowcount
+   copied+=inserted;skipped+=0 if inserted else 1
+  if b.mode=='move':c.execute(f'DELETE FROM playlist_items WHERE playlist_id=? AND id IN ({ph})',(b.source_playlist_id,*b.item_ids))
+  for playlist_id in {b.source_playlist_id,b.target_playlist_id}:
+   ids=[r['id'] for r in c.execute('SELECT id FROM playlist_items WHERE playlist_id=? ORDER BY position,id',(playlist_id,))]
+   for position,item_id in enumerate(ids,1):c.execute('UPDATE playlist_items SET position=? WHERE id=?',(position,item_id))
+ await cast();return {'ok':True,'copied':copied,'skipped':skipped,'mode':b.mode}
+@app.patch('/api/admin/playlists/item/{iid}')
+async def playlist_item_patch(iid:int,b:PlaylistItemPatch,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ with conn() as c:
+  if not c.execute('UPDATE playlist_items SET enabled=? WHERE id=?',(int(b.enabled),iid)).rowcount:raise HTTPException(404,'Playlist-Titel nicht gefunden')
  await cast();return {'ok':True}
 @app.websocket('/ws')
 async def ws(w:WebSocket):

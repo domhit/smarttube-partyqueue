@@ -1,1 +1,52 @@
-<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><link rel=stylesheet href=/static/style.css><title>PartyQueue Host</title><main class=wrap><h1>🎛️ PartyQueue V2.5.2</h1><section class=card><div class=row><input id=pw type=password class=grow placeholder=Admin-Passwort><button id=login>Anmelden</button></div></section><div id=panel class=hidden><div id=lock class=banner></div><section class=card><h2>Aktive Party</h2><div class=row><input id=partyName class=grow><label>Verwendete Grundplaylist <select id=partyPlaylist></select></label><label><input id=playlistEnabled type=checkbox> Grundplaylist aktiv</label></div><div class=row><select id=defaultTv></select><label>Limit <input id=limit type=number min=0></label><label>Wiederholung <input id=repeat type=number min=0></label></div><div class=checks><label><input id=detectExternalSkip type=checkbox> Externe Skip-Erkennung aktiv</label></div><div id=devices class=checks></div><div class=actions><button id=saveParty>Party speichern</button><button id=toggleLock class=secondary></button></div></section><section class=card><h2>YouTube-API</h2><div id=quotaSummary></div><div class=quota-track><div id=quotaBar></div></div><div id=quotaDetails class=muted></div></section><section class=card><h2>Abspieler</h2><div class=row><select id=tv></select><button id=start>Start</button><button id=skip>⏭ Skip</button></div><div id=current></div><div id=queue></div></section><section class=card><div class=editor-head><div><h2>Playlist-Verwaltung</h2><span id=editInfo class=tag></span></div><select id=editPlaylist></select></div><div class=actions><button id=newPlaylist>Neu</button><button id=clonePlaylist>Duplizieren</button><button id=renamePlaylist>Umbenennen</button><button id=deletePlaylist class=danger>Löschen</button></div><div class=row><input id=videoUrl class=grow placeholder="YouTube-Video-URL"><button id=addVideo>Titel hinzufügen</button></div><div class=row><input id=importUrl class=grow placeholder="YouTube-Playlist-URL"><button id=importPlaylist>Importieren</button></div><div id=editItems></div></section><section class=card><h2>Verlauf</h2><div class=actions><button data-export=html>HTML</button><button data-export=csv>CSV</button><button data-export=json>JSON</button><button data-export=m3u>M3U</button></div><div id=history></div></section></div></main><div id=toast></div><script src=/static/host.js></script>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PartyQueue Host</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>🎛️ PartyQueue V2.6.0</h1>
+  <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
+  <div id="panel" class="hidden">
+    <div id="lock" class="banner"></div>
+    <section class="card">
+      <h2>Aktive Party</h2>
+      <div class="row"><input id="partyName" class="grow"><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"> Grundplaylist aktiv</label></div>
+      <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
+      <div class="checks"><label><input id="detectExternalSkip" type="checkbox"> Externe Skip-Erkennung aktiv</label></div>
+      <div id="devices" class="checks"></div>
+      <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div>
+    </section>
+    <section class="card"><h2>YouTube-API</h2><div id="quotaSummary"></div><div class="quota-track"><div id="quotaBar"></div></div><div id="quotaDetails" class="muted"></div></section>
+    <section class="card">
+      <h2>Abspieler & Wunschqueue</h2>
+      <div class="row"><select id="tv"></select><button id="start">Start</button><button id="skip">⏭ Skip</button></div>
+      <div id="current"></div>
+      <p class="muted">Queue per Griff verschieben. Die Pfeile bleiben als Touch-Fallback erhalten.</p>
+      <div id="queue" class="sortable-list"></div>
+    </section>
+    <section class="card">
+      <div class="editor-head"><div><h2>Playlist-Verwaltung</h2><span id="editInfo" class="tag"></span></div><select id="editPlaylist"></select></div>
+      <div class="actions"><button id="newPlaylist">Neu</button><button id="clonePlaylist">Duplizieren</button><button id="renamePlaylist">Umbenennen</button><button id="deletePlaylist" class="danger">Löschen</button></div>
+      <div class="row"><input id="videoUrl" class="grow" placeholder="YouTube-Video-URL"><button id="addVideo">Titel hinzufügen</button></div>
+      <div class="row"><input id="importUrl" class="grow" placeholder="YouTube-Playlist-URL"><button id="importPlaylist">Importieren</button></div>
+      <div class="playlist-tools">
+        <input id="playlistFilter" class="grow" placeholder="Titel oder Kanal filtern">
+        <label><input id="selectAllVisible" type="checkbox"> Sichtbare auswählen</label>
+        <select id="targetPlaylist"></select>
+        <button id="copySelected">Kopieren</button>
+        <button id="moveSelected" class="secondary">Verschieben</button>
+      </div>
+      <p class="muted">Titel per Griff sortieren. Bei aktivem Filter ist Drag-and-drop deaktiviert.</p>
+      <div id="editItems" class="sortable-list"></div>
+    </section>
+    <section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="/static/host.js"></script>
+</body>
+</html>
