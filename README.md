@@ -1,6 +1,15 @@
-# SmartTube PartyQueue V2.7.1-debug1
+# SmartTube PartyQueue V2.7.1
 
-Diagnose-Build auf Basis des produktiv getesteten V2.7.0-Stands. Party-Lifecycle, Archiv, Recap, Playlist-Verwaltung und Multi-TV bleiben erhalten. Die Playback-Entscheidungen werden zusätzlich protokolliert und im Host-Frontend dargestellt.
+Stabilitäts-Fix auf Basis des produktiv getesteten V2.7.0-Stands. Party-Lifecycle, Archiv, Recap, Playlist-Verwaltung und Multi-TV bleiben erhalten. Die Playback-Entscheidungen werden zusätzlich protokolliert und im Host-Frontend dargestellt.
+
+## Start-Guard-Fix
+
+- Bei jedem von PartyQueue ausgelösten Titelwechsel wird `PRESTART_IDLE_GUARD` aktiviert.
+- Alter MediaSession-Status wird verworfen.
+- Ein noch laufender Idle-Timer wird abgebrochen.
+- Übergangs-`idle` von SmartTube/ADB kann den gerade gestarteten Titel nicht mehr beenden.
+- Der Schutz greift bei Host-Skip, extern erkanntem Skip, natürlichem Ende und Idle-Fallback.
+- Das Diagnosepanel bleibt zur Verifikation erhalten.
 
 ## Playback-Diagnosepanel
 
@@ -61,3 +70,20 @@ docker compose logs --tail=100 -f
 ```
 
 Keine Änderung an `.env`, Datenbank, Home Assistant oder Caddy erforderlich.
+
+## Verifikation des Fixes
+
+Nach einem Host-Skip sollte das Diagnosepanel diese Folge zeigen:
+
+```text
+MANUAL_SKIP_BUTTON
+DONE reason=host_button
+START_GUARD_ARMED
+NEXT_QUEUE_SELECTED oder NEXT_BASE_SELECTED
+START_GUARD_ARMED reason=play_request
+PLAY_REQUEST
+PLAY_WEBHOOK_OK
+IDLE_IGNORED_GUARD
+```
+
+Während der Guard-Zeit darf für den neu gestarteten Titel kein `DONE reason=idle_fallback` erscheinen.

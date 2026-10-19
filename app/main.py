@@ -26,6 +26,13 @@ def current_diag():
   tv=d['id'];x=pb.get(tv,{})
   out[tv]={'name':d['name'],'state':x.get('state'),'position':x.get('media_position'),'app_id':x.get('app_id'),'age_seconds':round(now-x.get('received',now),3) if x else None,'guard_remaining':round(max(0,guard.get(tv,0)-now),3),'idle_pending':bool(tv in idle and not idle[tv].done())}
  return out
+def arm_start_guard(tv,reason):
+ guard[tv]=time.monotonic()+settings.prestart_idle_guard
+ previous=pb.pop(tv,None)
+ task=idle.pop(tv,None)
+ cancelled=bool(task and not task.done())
+ if cancelled:task.cancel()
+ debug_event('START_GUARD_ARMED',tv,reason=reason,seconds=settings.prestart_idle_guard,previous_state=previous.get('state') if previous else None,previous_position=previous.get('media_position') if previous else None,idle_timer_cancelled=cancelled)
 class Add(BaseModel):video_id:Optional[str]=None;url:Optional[str]=None;requested_by:str='Gast';guest_id:str='';target_tv:Optional[str]=None
 class Auth(BaseModel):password:str
 class Tv(BaseModel):target_tv:str
@@ -79,6 +86,7 @@ async def cast():
   except:dead.append(w)
  for w in dead:clients.discard(w)
 async def play(x):
+ arm_start_guard(x['target_tv'],'play_request')
  debug_event('PLAY_REQUEST',x['target_tv'],queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'))
  try:
   async with httpx.AsyncClient(timeout=15) as c:r=await c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package});r.raise_for_status()
@@ -108,20 +116,22 @@ async def done(tv,st='played',reason='unspecified'):
   current=c.execute("SELECT id,video_id,title,duration_seconds,started_at FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
   n=c.execute("UPDATE queue SET status=?,finished_at=CURRENT_TIMESTAMP WHERE party_id=? AND target_tv=? AND status='playing'",(st,p['id'],tv)).rowcount
  debug_event('DONE',tv,reason=reason,result_status=st,updated=n,queue_id=current['id'] if current else None,video_id=current['video_id'] if current else None,title=current['title'] if current else None,duration=current['duration_seconds'] if current else None)
- if n:await cast();await nxt(tv)
+ if n:
+  arm_start_guard(tv,'done_'+reason)
+  await cast();await nxt(tv)
 async def metadata(v=None,u=None):
  v=v or video_id(u or'');a=await details([v]) if v else[]
  if not a:raise HTTPException(400,'Video nicht verfügbar')
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.7.1-debug1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.7.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.7.1-debug1'}
+async def health():return {'ok':True,'version':'2.7.1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -256,7 +266,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'2.7.1-debug1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'2.7.1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
