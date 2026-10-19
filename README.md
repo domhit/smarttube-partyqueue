@@ -1,4 +1,4 @@
-# SmartTube PartyQueue V2.8.2
+# SmartTube PartyQueue V2.8.3
 
 Stabilitäts-Fix auf Basis des produktiv getesteten V2.7.0-Stands. Party-Lifecycle, Archiv, Recap, Playlist-Verwaltung und Multi-TV bleiben erhalten. Die Playback-Entscheidungen werden zusätzlich protokolliert und im Host-Frontend dargestellt.
 
@@ -94,3 +94,22 @@ Während der Guard-Zeit darf für den neu gestarteten Titel kein `DONE reason=id
 - Hype-Button fuer laufende Titel, ein Toggle pro Gast und Titel
 - Hype in Host, Archiv, HTML- und PDF-Recap
 - Playback-Start-Watchdog mit einmaligem Retry und Diagnoseevents
+
+
+### V2.8.3
+- Playback-Watchdog startet parallel zum ersten Home-Assistant-Webhook.
+- Haengende Webhook-Aufrufe blockieren den Retry nicht mehr.
+- Eigener Webhook-Timeout mit `PLAY_WEBHOOK_TIMEOUT=5`.
+- Neues Diagnoseereignis `PLAY_WEBHOOK_TIMEOUT`.
+
+#### Technischer Ablauf des V2.8.3-Fixes
+
+```text
+PLAY_DISPATCHED + PLAY_CONFIRM_WAIT starten sofort
+PLAY_REQUEST attempt=1 laeuft unabhaengig davon
+nach 6 Sekunden ohne PLAY_CONFIRMED: PLAY_RETRY attempt=2
+jeder Webhook-Versuch endet spaetestens nach PLAY_WEBHOOK_TIMEOUT
+nach weiteren 10 Sekunden: PLAY_CONFIRM_FAILED
+```
+
+Ein haengender Home-Assistant-Webhook kann den Retry damit nicht mehr blockieren. Der aktuelle Queue-Eintrag bleibt waehrend der Wiederherstellung `playing`; es wird kein weiterer Titel ausgewaehlt.
