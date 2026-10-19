@@ -8,17 +8,17 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.6.0</h1>
+  <h1>🎛️ PartyQueue V2.7.0</h1>
   <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
   <div id="panel" class="hidden">
     <div id="lock" class="banner"></div>
     <section class="card">
-      <h2>Aktive Party</h2>
+      <div class="editor-head"><h2>Aktive Party</h2><div class="actions"><button id="newParty">Neue Party</button><button id="cloneParty" class="secondary">Party klonen</button><button id="closeParty" class="danger">Party abschließen</button></div></div><div id="noParty" class="banner hidden"></div><div id="partyForm">
       <div class="row"><input id="partyName" class="grow"><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"> Grundplaylist aktiv</label></div>
       <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" type="number" min="0"></label><label>Wiederholung <input id="repeat" type="number" min="0"></label></div>
       <div class="checks"><label><input id="detectExternalSkip" type="checkbox"> Externe Skip-Erkennung aktiv</label></div>
       <div id="devices" class="checks"></div>
-      <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div>
+      <div class="actions"><button id="saveParty">Party speichern</button><button id="toggleLock" class="secondary"></button></div></div>
     </section>
     <section class="card"><h2>YouTube-API</h2><div id="quotaSummary"></div><div class="quota-track"><div id="quotaBar"></div></div><div id="quotaDetails" class="muted"></div></section>
     <section class="card">
@@ -43,6 +43,7 @@
       <p class="muted">Titel per Griff sortieren. Bei aktivem Filter ist Drag-and-drop deaktiviert.</p>
       <div id="editItems" class="sortable-list"></div>
     </section>
+    <section class="card"><h2>Partyarchiv</h2><p class="muted">Abgeschlossene Partys bleiben unverändert erhalten und können nicht wieder geöffnet werden.</p><div id="partyArchive"></div></section>
     <section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section>
   </div>
 </main>

@@ -1,31 +1,47 @@
-# SmartTube PartyQueue V2.6.0
+# SmartTube PartyQueue V2.7.0
 
-V2.6.0 baut vollständig auf dem verifizierten V2.5.2-Stand auf. Die Playback-Funktionen `play()`, `nxt()`, `done()` und `progress()` sind byteidentisch zu V2.5.2 und damit zur funktionierenden V2.5.1-Engine.
+V2.7.0 baut vollständig auf dem verifizierten V2.6.0-Stand auf. Die Playback-Funktionen `play()`, `nxt()`, `done()` und `progress()` sind byteidentisch zu V2.6.0.
 
-## Playlist-Verwaltung
+## Party-Lifecycle
 
-- Titel und Kanal filtern
-- Titelanzahl, aktive Titel und Gesamtlaufzeit anzeigen
-- sichtbare Titel gemeinsam auswählen
-- ausgewählte Titel in eine andere Playlist kopieren oder verschieben
-- vorhandene Duplikate im Ziel überspringen
-- Titel aktivieren oder deaktivieren
-- Titel per Drag-and-drop sortieren
-- Erstellen, Duplizieren, Umbenennen, Löschen, Einzelimport und YouTube-Playlist-Import bleiben erhalten
+- **Party speichern** ändert nur die Einstellungen der laufenden Party.
+- **Neue Party** beendet die laufende Party und startet eine frische Party mit Standardwerten.
+- **Party klonen** beendet die laufende Party und startet eine neue Party mit denselben Einstellungen.
+- **Party abschließen** setzt `active=0`, setzt `ended_at` und archiviert die Party endgültig.
+- Der aktuell laufende Titel wird beim Abschluss als gespielt gespeichert.
+- Offene Wünsche werden als `cancelled` gespeichert und nicht in die neue Party übernommen.
+- Abgeschlossene Partys können nicht wieder geöffnet werden.
+- Eine Datenbankmigration stellt sicher, dass höchstens eine Party aktiv ist.
 
-## Wunschqueue
+## Partyarchiv
 
-- Drag-and-drop im Host
-- Pfeiltasten bleiben als Touch-Fallback erhalten
-- `Als Nächstes` und Entfernen bleiben erhalten
-- Queue und Sortierung bleiben pro Ziel-TV getrennt
+- Partyname, Startzeit, Endzeit und Dauer
+- Anzahl gespielter Titel
+- Anzahl erfüllter Wünsche
+- Summe der Upvotes
+- Exporte pro Party: Recap, CSV, JSON und M3U
+- Archivdaten werden nur über den authentifizierten Admin-Endpunkt bereitgestellt.
 
-## Aus V2.5.2 erhalten
+## HTML Party Recap
 
-- funktionierende externe Skip-Erkennung und Checkbox
+- persönliche Einleitung mit Partyname, Datum, Startzeit und Dauer
+- Statistik-Karten für Titel, Wünsche, Upvotes, Wunschgeber und Skips
+- Meiste Wünsche
+- Titel mit den meisten Upvotes
+- Top-Künstler/Kanal
+- Verhältnis Wünsche zu Grundplaylist
+- Wunschgeber-Ranking
+- chronologische Titelliste mit Startzeit, Wunschgeber, Votes, Quelle, Status und YouTube-Link
+- responsives Layout und Druckansicht
+
+## Erhalten aus V2.6.0
+
+- funktionierende externe Skip-Erkennung
+- Playlist-Verwaltung und Drag-and-drop
+- Queue-Drag-and-drop
+- Multi-TV-Duplikatschutz
 - YouTube-API-Kontingent
-- Duplikat- und Wiederholungsschutz pro TV
-- Trusted-Types-sicheres Tampermonkey-Userscript
+- Trusted-Types-sicheres Userscript
 
 ## Update
 
@@ -37,4 +53,4 @@ docker compose up -d --build
 docker compose logs --tail=100 -f
 ```
 
-Keine Änderung an `.env`, Datenbank oder Home Assistant erforderlich.
+Die Datenbankmigration erfolgt automatisch. Keine Änderung an `.env`, Home Assistant oder Caddy erforderlich.
