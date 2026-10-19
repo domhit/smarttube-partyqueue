@@ -1,49 +1,56 @@
-# SmartTube PartyQueue V2.7.0
+# SmartTube PartyQueue V2.7.1-debug1
 
-V2.7.0 baut vollständig auf dem verifizierten V2.6.0-Stand auf. Die Playback-Funktionen `play()`, `nxt()`, `done()` und `progress()` sind byteidentisch zu V2.6.0.
+Diagnose-Build auf Basis des produktiv getesteten V2.7.0-Stands. Party-Lifecycle, Archiv, Recap, Playlist-Verwaltung und Multi-TV bleiben erhalten. Die Playback-Entscheidungen werden zusätzlich protokolliert und im Host-Frontend dargestellt.
 
-## Party-Lifecycle
+## Playback-Diagnosepanel
 
-- **Party speichern** ändert nur die Einstellungen der laufenden Party.
-- **Neue Party** beendet die laufende Party und startet eine frische Party mit Standardwerten.
-- **Party klonen** beendet die laufende Party und startet eine neue Party mit denselben Einstellungen.
-- **Party abschließen** setzt `active=0`, setzt `ended_at` und archiviert die Party endgültig.
-- Der aktuell laufende Titel wird beim Abschluss als gespielt gespeichert.
-- Offene Wünsche werden als `cancelled` gespeichert und nicht in die neue Party übernommen.
-- Abgeschlossene Partys können nicht wieder geöffnet werden.
-- Eine Datenbankmigration stellt sicher, dass höchstens eine Party aktiv ist.
+Nach der Anmeldung im Host erscheint die Karte **Playback-Diagnose** mit:
 
-## Partyarchiv
+- internem Status je TV
+- letzter Position und Alter der Statusmeldung
+- aktueller App-ID
+- verbleibendem Guard-Zeitraum
+- aktivem Idle-Timer
+- TV-Filter
+- Live-Aktualisierung alle 1,5 Sekunden
+- manuellem Aktualisieren
+- Kopieren aller Diagnosedaten als JSON
+- Leeren des In-Memory-Protokolls
 
-- Partyname, Startzeit, Endzeit und Dauer
-- Anzahl gespielter Titel
-- Anzahl erfüllter Wünsche
-- Summe der Upvotes
-- Exporte pro Party: Recap, CSV, JSON und M3U
-- Archivdaten werden nur über den authentifizierten Admin-Endpunkt bereitgestellt.
+Die letzten 500 Events werden nur im Arbeitsspeicher gehalten und gehen beim Container-Neustart verloren.
 
-## HTML Party Recap
+## Ereignisse
 
-- persönliche Einleitung mit Partyname, Datum, Startzeit und Dauer
-- Statistik-Karten für Titel, Wünsche, Upvotes, Wunschgeber und Skips
-- Meiste Wünsche
-- Titel mit den meisten Upvotes
-- Top-Künstler/Kanal
-- Verhältnis Wünsche zu Grundplaylist
-- Wunschgeber-Ranking
-- chronologische Titelliste mit Startzeit, Wunschgeber, Votes, Quelle, Status und YouTube-Link
-- responsives Layout und Druckansicht
+- `PROGRESS`: eingehende Home-Assistant-Meldung
+- `DECISION`: Ergebnis der Ende- und Skip-Prüfung
+- `DECISION_SKIPPED`: Meldung passt nicht zu State/App
+- `END_DETECTED`: Ende über Dauer-Schwelle erkannt
+- `EXTERNAL_SKIP_DETECTED`: Positionssprung als externer Skip erkannt
+- `IDLE_TIMER_SCHEDULED`, `IDLE_TIMER_FIRED`, `IDLE_TIMER_CANCELLED`, `IDLE_IGNORED_GUARD`
+- `DONE`: Queue-Eintrag abgeschlossen, inklusive Grund
+- `NEXT_ENTER`, `NEXT_BLOCKED_PLAYING`, `NEXT_QUEUE_SELECTED`, `NEXT_BASE_SELECTED`, `NEXT_NO_ITEM`
+- `PLAY_REQUEST`, `PLAY_WEBHOOK_OK`, `PLAY_WEBHOOK_ERROR`
+- `MANUAL_SKIP_BUTTON`
 
-## Erhalten aus V2.6.0
+Dieselben Events werden als strukturierte JSON-Zeilen mit Präfix `[PLAYBACK_DEBUG]` in die Docker-Logs geschrieben.
 
-- funktionierende externe Skip-Erkennung
-- Playlist-Verwaltung und Drag-and-drop
-- Queue-Drag-and-drop
-- Multi-TV-Duplikatschutz
-- YouTube-API-Kontingent
-- Trusted-Types-sicheres Userscript
+## Fehler reproduzieren
 
-## Update
+1. Host öffnen und anmelden.
+2. Im Diagnosepanel den betroffenen TV auswählen.
+3. Diagnose leeren.
+4. Checkbox **Externe Skip-Erkennung** auf den gewünschten Zustand setzen und **Party speichern** drücken.
+5. Einen einzelnen Testfall ausführen: SmartTube-Skip, Host-Skip, natürliches Ende oder Pause.
+6. Sobald der Fehler auftritt, **Live** deaktivieren.
+7. **JSON kopieren** drücken und den Inhalt zur Analyse bereitstellen.
+
+Parallel können die Serverlogs gespeichert werden:
+
+```bash
+docker compose logs --since=10m smarttube-partyqueue | grep PLAYBACK_DEBUG > playback-debug.log
+```
+
+## Installation
 
 ```bash
 cd /volume1/docker/smarttube-partyqueue
@@ -53,4 +60,4 @@ docker compose up -d --build
 docker compose logs --tail=100 -f
 ```
 
-Die Datenbankmigration erfolgt automatisch. Keine Änderung an `.env`, Home Assistant oder Caddy erforderlich.
+Keine Änderung an `.env`, Datenbank, Home Assistant oder Caddy erforderlich.

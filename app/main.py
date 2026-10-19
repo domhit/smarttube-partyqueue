@@ -1,4 +1,5 @@
-import asyncio,csv,html,io,json,random,secrets,time
+import asyncio,csv,html,io,json,logging,random,secrets,time
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,18 @@ from .config import settings
 from .db import conn,init_db
 from .youtube import video_id,details,search,playlist,quota
 D=settings.parsed_devices();IDS={x['id'] for x in D};clients=set();locks={};pb={};guard={};idle={}
+log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
+def debug_event(kind,tv=None,**data):
+ global diag_seq
+ diag_seq+=1
+ event={'seq':diag_seq,'time':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='milliseconds'),'kind':kind,'tv':tv,**data}
+ diag.append(event);log.info('[PLAYBACK_DEBUG] %s',json.dumps(event,ensure_ascii=False,default=str));return event
+def current_diag():
+ now=time.monotonic();out={}
+ for d in D:
+  tv=d['id'];x=pb.get(tv,{})
+  out[tv]={'name':d['name'],'state':x.get('state'),'position':x.get('media_position'),'app_id':x.get('app_id'),'age_seconds':round(now-x.get('received',now),3) if x else None,'guard_remaining':round(max(0,guard.get(tv,0)-now),3),'idle_pending':bool(tv in idle and not idle[tv].done())}
+ return out
 class Add(BaseModel):video_id:Optional[str]=None;url:Optional[str]=None;requested_by:str='Gast';guest_id:str='';target_tv:Optional[str]=None
 class Auth(BaseModel):password:str
 class Tv(BaseModel):target_tv:str
@@ -66,27 +79,35 @@ async def cast():
   except:dead.append(w)
  for w in dead:clients.discard(w)
 async def play(x):
- async with httpx.AsyncClient(timeout=15) as c:r=await c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package});r.raise_for_status()
+ debug_event('PLAY_REQUEST',x['target_tv'],queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'))
+ try:
+  async with httpx.AsyncClient(timeout=15) as c:r=await c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package});r.raise_for_status()
+  debug_event('PLAY_WEBHOOK_OK',x['target_tv'],queue_id=x.get('id'),status_code=r.status_code)
+ except Exception as e:
+  debug_event('PLAY_WEBHOOK_ERROR',x['target_tv'],queue_id=x.get('id'),error=repr(e));raise
 def base(c,p,tv):
  if not p['playlist_enabled'] or not p['playlist_id']:return None
  a=[dict(r) for r in c.execute('SELECT * FROM playlist_items WHERE playlist_id=? AND enabled=1',(p['playlist_id'],))]
  if not a:return None
  used=[r['playlist_item_id'] for r in c.execute('SELECT playlist_item_id FROM base_play_history WHERE party_id=? AND target_tv=? ORDER BY id DESC LIMIT ?',(p['id'],tv,settings.base_playlist_recent_exclude))];x=random.choice([z for z in a if z['id'] not in used]or a);c.execute('INSERT INTO base_play_history(target_tv,playlist_item_id,party_id) VALUES(?,?,?)',(tv,x['id'],p['id']));return x
 async def nxt(tv):
- p=party();tv=tvok(tv,p);l=locks.setdefault(tv,asyncio.Lock())
+ p=party();tv=tvok(tv,p);debug_event('NEXT_ENTER',tv,party_id=p['id']);l=locks.setdefault(tv,asyncio.Lock())
  async with l:
   with conn() as c:
-   if c.execute("SELECT 1 FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone():return False
+   if c.execute("SELECT 1 FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone():debug_event('NEXT_BLOCKED_PLAYING',tv,party_id=p['id']);return False
    r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id LIMIT 1",(p['id'],tv,p['upvote_sort'])).fetchone()
-   if r:x=dict(r);c.execute("UPDATE queue SET status='playing',started_at=CURRENT_TIMESTAMP WHERE id=?",(x['id'],))
+   if r:x=dict(r);c.execute("UPDATE queue SET status='playing',started_at=CURRENT_TIMESTAMP WHERE id=?",(x['id'],));debug_event('NEXT_QUEUE_SELECTED',tv,queue_id=x['id'],video_id=x['video_id'],title=x['title'],votes=x.get('votes'),position=x.get('position'))
    else:
     b=base(c,p,tv)
-    if not b:return False
-    k=c.execute("INSERT INTO queue(video_id,title,channel,thumbnail,duration_seconds,requested_by,target_tv,position,source,status,party_id,playlist_id,started_at) VALUES(?,?,?,?,?,'Grundplaylist',?,0,'base','playing',?,?,CURRENT_TIMESTAMP)",(b['video_id'],b['title'],b['channel'],b['thumbnail'],b['duration_seconds'],tv,p['id'],p['playlist_id']));x={**b,'id':k.lastrowid,'target_tv':tv}
+    if not b:debug_event('NEXT_NO_ITEM',tv,party_id=p['id']);return False
+    k=c.execute("INSERT INTO queue(video_id,title,channel,thumbnail,duration_seconds,requested_by,target_tv,position,source,status,party_id,playlist_id,started_at) VALUES(?,?,?,?,?,'Grundplaylist',?,0,'base','playing',?,?,CURRENT_TIMESTAMP)",(b['video_id'],b['title'],b['channel'],b['thumbnail'],b['duration_seconds'],tv,p['id'],p['playlist_id']));x={**b,'id':k.lastrowid,'target_tv':tv,'source':'base'};debug_event('NEXT_BASE_SELECTED',tv,queue_id=x['id'],video_id=x['video_id'],title=x['title'],duration=x.get('duration_seconds'))
   await play(x);await cast();return True
-async def done(tv,st='played'):
+async def done(tv,st='played',reason='unspecified'):
  p=party();tv=tvok(tv,p)
- with conn() as c:n=c.execute("UPDATE queue SET status=?,finished_at=CURRENT_TIMESTAMP WHERE party_id=? AND target_tv=? AND status='playing'",(st,p['id'],tv)).rowcount
+ with conn() as c:
+  current=c.execute("SELECT id,video_id,title,duration_seconds,started_at FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
+  n=c.execute("UPDATE queue SET status=?,finished_at=CURRENT_TIMESTAMP WHERE party_id=? AND target_tv=? AND status='playing'",(st,p['id'],tv)).rowcount
+ debug_event('DONE',tv,reason=reason,result_status=st,updated=n,queue_id=current['id'] if current else None,video_id=current['video_id'] if current else None,title=current['title'] if current else None,duration=current['duration_seconds'] if current else None)
  if n:await cast();await nxt(tv)
 async def metadata(v=None,u=None):
  v=v or video_id(u or'');a=await details([v]) if v else[]
@@ -94,13 +115,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();yield
-app=FastAPI(version='2.7.0',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='2.7.1-debug1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.7.0'}
+async def health():return {'ok':True,'version':'2.7.1-debug1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -131,7 +152,7 @@ async def login(b:Auth):au(b.password);return {'ok':True}
 @app.post('/api/admin/start')
 async def start(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);return {'started':await nxt(b.target_tv)}
 @app.post('/api/admin/skip')
-async def skip(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);await done(b.target_tv,'skipped');return {'ok':True}
+async def skip(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);debug_event('MANUAL_SKIP_BUTTON',b.target_tv);await done(b.target_tv,'skipped','host_button');return {'ok':True}
 @app.post('/api/admin/queue/reorder')
 async def queue_reorder(b:QueueReorder,x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party();tv=tvok(b.target_tv,p)
@@ -206,18 +227,40 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
  idle.clear();await cast();return {'ok':True,'id':r.lastrowid}
 @app.post('/api/playback/progress')
 async def progress(b:Progress,x_admin_password:str=Header(default='')):
- au(x_admin_password);p=party();tv=tvok(b.target_tv,p);old=pb.get(tv,{});pb[tv]={'state':b.state,'media_position':max(0,b.media_position),'app_id':b.app_id,'received':time.monotonic()}
+ au(x_admin_password);p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_pos=float(old.get('media_position',0) or 0);new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
+ pb[tv]={'state':b.state,'media_position':new_pos,'app_id':b.app_id,'received':now}
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
+ debug_event('PROGRESS',tv,state=b.state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
  if r and b.state=='playing' and b.app_id==settings.smarttube_package:
-  if r['duration_seconds'] and b.media_position>=r['duration_seconds']-settings.prestart_seconds:guard[tv]=time.monotonic()+settings.prestart_idle_guard;await done(tv)
-  elif p['detect_external_skip'] and old.get('media_position',0)>=settings.external_skip_min_previous and b.media_position<=settings.external_skip_max_new and time.monotonic()>=guard.get(tv,0):await done(tv,'skipped')
- if b.state=='idle' and time.monotonic()>=guard.get(tv,0):
+  end_match=bool(r['duration_seconds'] and new_pos>=r['duration_seconds']-settings.prestart_seconds)
+  skip_match=bool(p['detect_external_skip'] and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and now>=guard.get(tv,0))
+  debug_event('DECISION',tv,end_match=end_match,skip_match=skip_match,skip_enabled=bool(p['detect_external_skip']),old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(r['duration_seconds']-settings.prestart_seconds,3) if r['duration_seconds'] else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
+  if end_match:
+   guard[tv]=time.monotonic()+settings.prestart_idle_guard;debug_event('END_DETECTED',tv,position=round(new_pos,3),duration=r['duration_seconds'],new_guard_seconds=settings.prestart_idle_guard);await done(tv,'played','duration_threshold')
+  elif skip_match:
+   debug_event('EXTERNAL_SKIP_DETECTED',tv,old_position=round(old_pos,3),new_position=round(new_pos,3));await done(tv,'skipped','position_reset')
+ elif r:
+  debug_event('DECISION_SKIPPED',tv,reason='state_or_app_mismatch',state=b.state,app_id=b.app_id,expected_app=settings.smarttube_package)
+ if b.state=='idle' and now>=guard.get(tv,0):
+  debug_event('IDLE_TIMER_SCHEDULED',tv,delay=settings.idle_fallback_delay)
   async def f():
    await asyncio.sleep(settings.idle_fallback_delay)
-   if pb.get(tv,{}).get('state')=='idle' and time.monotonic()>=guard.get(tv,0):await done(tv)
-  if tv in idle and not idle[tv].done():idle[tv].cancel()
+   current_state=pb.get(tv,{}).get('state');remaining=max(0,guard.get(tv,0)-time.monotonic());debug_event('IDLE_TIMER_FIRED',tv,state=current_state,guard_remaining=round(remaining,3))
+   if current_state=='idle' and remaining<=0:await done(tv,'played','idle_fallback')
+  if tv in idle and not idle[tv].done():idle[tv].cancel();debug_event('IDLE_TIMER_CANCELLED',tv,reason='rescheduled')
   idle[tv]=asyncio.create_task(f())
+ elif b.state=='idle':debug_event('IDLE_IGNORED_GUARD',tv,guard_remaining=round(max(0,guard.get(tv,0)-now),3))
  await cast();return {'ok':True}
+
+@app.get('/api/admin/playback-debug')
+async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
+ au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
+ if tv:events=[x for x in events if x.get('tv')==tv]
+ return {'version':'2.7.1-debug1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+
+@app.delete('/api/admin/playback-debug')
+async def playback_debug_clear(x_admin_password:str=Header(default='')):
+ au(x_admin_password);diag.clear();debug_event('DEBUG_CLEARED');return {'ok':True}
 def pname(c,name,exclude=None):
  q='SELECT 1 FROM playlists WHERE lower(name)=lower(?)'+(' AND id<>?' if exclude else'');return c.execute(q,(name,exclude) if exclude else(name,)).fetchone()
 @app.post('/api/admin/playlists')

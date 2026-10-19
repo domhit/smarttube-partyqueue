@@ -8,7 +8,7 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>🎛️ PartyQueue V2.7.0</h1>
+  <h1>🎛️ PartyQueue V2.7.1 Debug</h1>
   <section class="card"><div class="row"><input id="pw" type="password" class="grow" placeholder="Admin-Passwort"><button id="login">Anmelden</button></div></section>
   <div id="panel" class="hidden">
     <div id="lock" class="banner"></div>
@@ -43,6 +43,7 @@
       <p class="muted">Titel per Griff sortieren. Bei aktivem Filter ist Drag-and-drop deaktiviert.</p>
       <div id="editItems" class="sortable-list"></div>
     </section>
+    <section class="card debug-card"><div class="editor-head"><div><h2>Playback-Diagnose</h2><span id="debugStatus" class="tag">lädt …</span></div><div class="actions"><select id="debugTv"><option value="">Alle TVs</option></select><label><input id="debugAuto" type="checkbox" checked> Live</label><button id="debugRefresh" class="secondary">Aktualisieren</button><button id="debugCopy" class="secondary">JSON kopieren</button><button id="debugClear" class="danger">Leeren</button></div></div><div id="debugDevices" class="debug-devices"></div><p class="muted">Zeigt die letzten 500 Playback-Ereignisse im Arbeitsspeicher. Die gleichen Ereignisse erscheinen mit <code>[PLAYBACK_DEBUG]</code> in den Docker-Logs.</p><div class="debug-table-wrap"><table class="debug-table"><thead><tr><th>Zeit</th><th>TV</th><th>Ereignis</th><th>Details</th></tr></thead><tbody id="debugEvents"></tbody></table></div></section>
     <section class="card"><h2>Partyarchiv</h2><p class="muted">Abgeschlossene Partys bleiben unverändert erhalten und können nicht wieder geöffnet werden.</p><div id="partyArchive"></div></section>
     <section class="card"><h2>Verlauf</h2><div class="actions"><button data-export="html">HTML</button><button data-export="csv">CSV</button><button data-export="json">JSON</button><button data-export="m3u">M3U</button></div><div id="history"></div></section>
   </div>
