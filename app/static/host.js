@@ -1,20 +1,13 @@
 const $=s=>document.querySelector(s);
 const HOST_TABS=['party','playlist','archive','debug'];
 function activateTab(name,save=true){
-  if(!HOST_TABS.includes(name))name='party';
-  document.querySelectorAll('[data-tab]').forEach(button=>{
-    const active=button.dataset.tab===name;
-    button.classList.toggle('active',active);
-    button.setAttribute('aria-selected',active?'true':'false');
-  });
-  document.querySelectorAll('[data-tab-page]').forEach(page=>page.classList.toggle('active',page.dataset.tabPage===name));
-  if(save)localStorage.setItem('partyqueue_host_tab',name);
-  if(name==='debug'){loadDebug();debugLoop()}else{clearInterval(debugTimer);debugTimer=null}
+ if(!HOST_TABS.includes(name))name='party';
+ document.querySelectorAll('[data-tab]').forEach(button=>{const active=button.dataset.tab===name;button.classList.toggle('active',active);button.setAttribute('aria-selected',active?'true':'false')});
+ document.querySelectorAll('[data-tab-page]').forEach(page=>page.classList.toggle('active',page.dataset.tabPage===name));
+ if(save)localStorage.setItem('partyqueue_host_tab',name);
+ if(name==='debug'){loadDebug();debugLoop()}else{clearInterval(debugTimer);debugTimer=null}
 }
-function initTabs(){
-  document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>activateTab(button.dataset.tab));
-  activateTab(localStorage.getItem('partyqueue_host_tab')||'party',false);
-}
+function initTabs(){document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>activateTab(button.dataset.tab));activateTab(localStorage.getItem('partyqueue_host_tab')||'party',false)}
 
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=x=>{x=Math.max(0,Math.floor(+x||0));return `${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`};
@@ -42,8 +35,21 @@ function renderQuota(q){let used=+q.search_api_calls||0,limit=+q.limit||100,pct=
 function localDate(v){if(!v)return '–';return new Date(String(v).replace(' ','T')+'Z').toLocaleString('de-DE',{dateStyle:'medium',timeStyle:'short'})}
 function archiveDuration(p){if(!p.started_at||!p.ended_at)return p.active?'läuft':'–';return longFmt((new Date(String(p.ended_at).replace(' ','T')+'Z')-new Date(String(p.started_at).replace(' ','T')+'Z'))/1000)}
 function openExport(id,fmt){window.open(`/api/party/${id}/export/${fmt}?password=${encodeURIComponent($('#pw').value)}`)}
-async function loadArchive(){try{renderArchive(await api('/api/admin/parties'))}catch(e){toast(e.message)}}
-function renderArchive(items){$('#partyArchive').innerHTML=items.length?items.map(p=>`<article class=archive-item><div><b>${p.active?'🟢 ':''}${esc(p.name)}</b><div class=muted>${localDate(p.started_at)} · ${archiveDuration(p)} · ${p.played_total||0} Titel · ${p.request_total||0} Wünsche · ${p.votes_total||0} Votes</div></div><div class=actions><button data-pexport=${p.id}:html>✨ Recap</button><button class=secondary data-pexport=${p.id}:csv>CSV</button><button class=secondary data-pexport=${p.id}:json>JSON</button><button class=secondary data-pexport=${p.id}:m3u>M3U</button></div></article>`).join(''):'Noch keine Partys vorhanden';document.querySelectorAll('[data-pexport]').forEach(b=>b.onclick=()=>{let [id,fmt]=b.dataset.pexport.split(':');openExport(id,fmt)})}
+let archiveItems=[];
+async function loadArchive(){try{archiveItems=await api('/api/admin/parties');renderArchive()}catch(e){toast(e.message)}}
+function archiveSearchText(p){return [p.name,p.started_at,p.ended_at,p.top_requester,p.top_artist,p.top_voted_title].join(' ').toLowerCase()}
+function renderArchive(){
+ const term=$('#archiveFilter').value.trim().toLowerCase(),items=archiveItems.filter(p=>!term||archiveSearchText(p).includes(term));
+ $('#archiveSummary').textContent=`${items.length} von ${archiveItems.length} Partys`;
+ $('#partyArchive').innerHTML=items.length?items.map(p=>`<article class="archive-item"><div class="archive-main"><b>${p.active?'🟢 ':''}${esc(p.name)}</b><div class="muted">${localDate(p.started_at)} · ${archiveDuration(p)} · ${p.played_total||0} Titel · ${p.request_total||0} Wünsche · ${p.votes_total||0} Votes</div><div class="archive-highlights"><span>🏆 ${esc(p.top_requester||'–')}${p.top_requester_count?` (${p.top_requester_count})`:''}</span><span>🎸 ${esc(p.top_artist||'–')}${p.top_artist_count?` (${p.top_artist_count})`:''}</span><span>👍 ${esc(p.top_voted_title||'–')}${p.top_voted_votes?` (${p.top_voted_votes})`:''}</span></div></div><div class="actions"><button data-pexport="${p.id}:html">✨ Recap</button><button data-pexport="${p.id}:pdf">PDF</button><button class="secondary" data-pexport="${p.id}:csv">CSV</button><button class="secondary" data-pexport="${p.id}:json">JSON</button><button class="secondary" data-pexport="${p.id}:m3u">M3U</button>${p.active?'':`<button class="danger" data-pdelete="${p.id}" data-pname="${esc(p.name)}">Löschen</button>`}</div></article>`).join(''):'Keine passende Party gefunden';
+ document.querySelectorAll('[data-pexport]').forEach(b=>b.onclick=()=>{let [id,fmt]=b.dataset.pexport.split(':');openExport(id,fmt)});
+ document.querySelectorAll('[data-pdelete]').forEach(b=>b.onclick=()=>deleteArchivedParty(+b.dataset.pdelete,b.dataset.pname));
+}
+async function deleteArchivedParty(id,name){
+ const typed=prompt(`Party endgültig löschen? Queue, Verlauf, Votes und Recap werden entfernt.\n\nZum Bestätigen exakt eingeben:\n${name}`);
+ if(typed!==name)return typed===null?undefined:toast('Name stimmt nicht. Party wurde nicht gelöscht.');
+ try{await api(`/api/admin/parties/${id}`,{method:'DELETE'});toast('Archivierte Party gelöscht',true);await loadArchive()}catch(e){toast(e.message)}
+}
 function renderInactive(s){partyId=null;$('#noParty').textContent='Derzeit läuft keine Party.';$('#noParty').className='banner open';$('#partyForm').className='hidden';$('#cloneParty').disabled=true;$('#closeParty').disabled=true;$('#current').textContent='Noch nichts';$('#queue').textContent='Queue leer';$('#history').textContent='Kein aktiver Verlauf'}
 function draw(s){st=s;progressStamp=Date.now();renderQuota(s.quota||{});if(!s.party){renderInactive(s);return}$('#noParty').className='hidden';$('#partyForm').className='';$('#cloneParty').disabled=false;$('#closeParty').disabled=false;if(partyId!==s.party.id||!dirty)fillParty(s);$('#lock').textContent=s.party.queue_locked?'🔒 Wünsche gesperrt':'🔓 Wünsche erlaubt';$('#lock').className='banner '+(s.party.queue_locked?'locked':'open');$('#toggleLock').textContent=s.party.queue_locked?'Entsperren':'Sperren';let old=$('#tv').value||s.party.default_tv;$('#tv').innerHTML=s.devices.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');$('#tv').value=s.devices.some(x=>x.id===old)?old:s.party.default_tv;let tv=$('#tv').value,c=s.current[tv],p=s.playback[tv];$('#current').innerHTML=c?`<div class="queue-item"><img src="${c.thumbnail}"><div><b>${esc(c.title)}</b><div class="muted">${esc(c.channel)}</div></div></div>${progressHtml(c,p)}`:'Noch nichts';let q=s.queue.filter(x=>x.target_tv===tv);$('#queue').innerHTML=q.length?q.map((x,i)=>`<div class="queue-item queue-sort-row" draggable="true" data-queue-id="${x.id}"><span class="drag-handle" title="Ziehen">☰</span><img src="${x.thumbnail}"><div><b>${i+1}. ${esc(x.title)}</b><div class="muted">${esc(x.requested_by)} · ▲${x.votes}</div></div><div class="queue-actions"><button class="secondary" data-up="${i}">↑</button><button class="secondary" data-down="${i}">↓</button><button data-next="${x.id}">▶ Als Nächstes</button><button class="danger" data-qdel="${x.id}">✕</button></div></div>`).join(''):'Queue leer';bindQueue();let prev=editorId;$('#editPlaylist').innerHTML=options(s.playlists);editorId=s.playlists.some(x=>x.id==prev)?prev:(s.party.playlist_id||s.playlists[0]?.id);$('#editPlaylist').value=editorId;if(prev!==editorId)loadEditor();else{$('#targetPlaylist').innerHTML=options(s.playlists,editorId);let pl=s.playlists.find(x=>x.id==editorId);if(pl&&pl.item_count!==editorItems.length)loadEditor()}$('#history').innerHTML=s.history.map(x=>`<div class="queue-item"><img src="${x.thumbnail}"><div><b>${esc(x.title)}</b><div class="muted">${esc(x.requested_by)}</div></div><button data-hist="${x.id}">⭐ In bearbeitete Playlist</button></div>`).join('');document.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>api('/api/admin/playlists/item',{method:'POST',body:J({playlist_id:+editorId,history_id:+b.dataset.hist})}).then(loadEditor).catch(e=>toast(e.message)))}
 async function createParty(clone){let name=prompt(clone?'Name der geklonten Party':'Name der neuen Party');if(!name)return;if(st?.party&&!confirm(`Die laufende Party „${st.party.name}“ wird beendet. Offene Wünsche werden verworfen. Fortfahren?`))return;try{await api('/api/admin/parties',{method:'POST',body:J({name,clone_current:clone})});partyId=null;dirty=false;toast(clone?'Party geklont und gestartet':'Neue Party gestartet',true);loadArchive()}catch(e){toast(e.message)}}
@@ -56,6 +62,7 @@ $('#editPlaylist').onchange=()=>{editorId=+$('#editPlaylist').value;$('#playlist
 async function bulk(mode){let ids=selectedItemIds(),target=+$('#targetPlaylist').value;if(!ids.length)return toast('Keine Titel ausgewählt');if(!target)return toast('Keine Zielplaylist verfügbar');try{let r=await api('/api/admin/playlists/bulk',{method:'POST',body:J({source_playlist_id:+editorId,target_playlist_id:target,item_ids:ids,mode})});toast(`${r.copied} Titel ${mode==='copy'?'kopiert':'verschoben'}${r.skipped?`, ${r.skipped} bereits vorhanden`:''}`,true);await loadEditor()}catch(e){toast(e.message)}}
 $('#copySelected').onclick=()=>bulk('copy');$('#moveSelected').onclick=()=>bulk('move');
 $('#newPlaylist').onclick=()=>{let n=prompt('Name der neuen Playlist');if(n)api('/api/admin/playlists',{method:'POST',body:J({name:n})}).then(x=>{editorId=x.id;toast('Playlist erstellt',true)}).catch(e=>toast(e.message))};$('#clonePlaylist').onclick=()=>{let n=prompt('Name der Kopie');if(n)api(`/api/admin/playlists/${editorId}/clone`,{method:'POST',body:J({name:n})}).then(x=>{editorId=x.id;toast('Playlist dupliziert',true)}).catch(e=>toast(e.message))};$('#renamePlaylist').onclick=()=>{let n=prompt('Neuer Name',st.playlists.find(x=>x.id==editorId)?.name);if(n)api('/api/admin/playlists/'+editorId,{method:'PATCH',body:J({name:n})}).then(()=>toast('Umbenannt',true)).catch(e=>toast(e.message))};$('#deletePlaylist').onclick=()=>confirm('Playlist wirklich löschen?')&&api('/api/admin/playlists/'+editorId,{method:'DELETE'}).then(()=>{editorId=null;toast('Gelöscht',true)}).catch(e=>toast(e.message));$('#addVideo').onclick=()=>api('/api/admin/playlists/item',{method:'POST',body:J({playlist_id:+editorId,url:$('#videoUrl').value})}).then(()=>{toast('Titel hinzugefügt',true);loadEditor()}).catch(e=>toast(e.message));$('#importPlaylist').onclick=()=>api('/api/admin/playlists/import',{method:'POST',body:J({playlist_id:+editorId,playlist:$('#importUrl').value})}).then(x=>{toast(`${x.added} Titel importiert`,true);loadEditor()}).catch(e=>toast(e.message));
+$('#archiveFilter').oninput=renderArchive;
 document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>st?.party?openExport(st.party.id,b.dataset.export):toast('Keine aktive Party'));
 setInterval(()=>{if(!st)return;let tv=$('#tv').value,p=st.playback[tv],c=st.current[tv];if(!p||!c||p.state!=='playing')return;let x=Math.min(c.duration_seconds,p.media_position+(Date.now()-progressStamp)/1000),bar=$('#current .progress>div'),label=$('#hostPos');if(bar)bar.style.width=`${Math.min(100,x/c.duration_seconds*100)}%`;if(label)label.textContent=fmt(x)},250);
 let debugData=null,debugTimer=null;
