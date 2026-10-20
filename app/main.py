@@ -205,30 +205,40 @@ async def metadata(v=None,u=None):
  v=v or video_id(u or'');a=await details([v]) if v else[]
  if not a:raise HTTPException(400,'Video nicht verfügbar')
  return a[0]
-def parse_adb_media_session(output,package):
+def parse_adb_media_session(output,package,device_uptime=None):
  blocks=re.split(r'(?=MediaSessionRecord\{)',output)
  candidates=[b for b in blocks if package in b]
  if not candidates:return {'state':'idle','media_position':0,'app_id':None}
  def parse_block(block):
-  playback=re.search(r'PlaybackState\s*\{\s*state=(?:(?P<name>[A-Z_]+)\()?(?P<code>\d+)\)?,\s*position=(?P<position>-?\d+)',block,re.IGNORECASE)
+  playback=re.search(r'PlaybackState\s*\{\s*state=(?:(?P<name>[A-Z_]+)\()?(?P<code>\d+)\)?,\s*position=(?P<position>-?\d+).*?speed=(?P<speed>-?[0-9.]+).*?updated=(?P<updated>\d+)',block,re.IGNORECASE)
   if not playback:return None
-  code=int(playback.group('code'));position=max(0,int(playback.group('position')))/1000
+  code=int(playback.group('code'));base_ms=max(0,int(playback.group('position')));speed=float(playback.group('speed'));updated_ms=int(playback.group('updated'))
   state={3:'playing',2:'paused',6:'buffering',8:'connecting'}.get(code,'idle')
-  return {'state':state,'media_position':position,'app_id':package,'_code':code}
+  position_ms=base_ms
+  if state=='playing' and device_uptime is not None and speed>0:
+   position_ms+=max(0,device_uptime*1000-updated_ms)*speed
+  return {'state':state,'media_position':position_ms/1000,'app_id':package,'_code':code,'_base_position':base_ms/1000,'_updated':updated_ms,'_speed':speed}
  parsed=[(b,parse_block(b)) for b in candidates]
  parsed=[(b,x) for b,x in parsed if x]
  if not parsed:return {'state':'idle','media_position':0,'app_id':package}
  block,data=max(parsed,key=lambda item:(item[1]['state'] in ('playing','paused','buffering','connecting'),'active=true' in item[0].lower(),len(item[0])))
- data.pop('_code',None);return data
+ for key in ('_code','_base_position','_updated','_speed'):data.pop(key,None)
+ return data
 
 async def poll_adb_tv(tv):
  target=adb_target(tv.get('ip_address'))
  if not target:return
  try:
+  code,uptime_out=await run_adb('-s',target,'shell','cat','/proc/uptime',timeout=max(3,settings.adb_poll_interval))
+  if code!=0:
+   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='uptime',output=uptime_out);return
+  try:device_uptime=float(uptime_out.split()[0])
+  except (ValueError,IndexError):
+   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='uptime_parse',output=uptime_out);return
   code,out=await run_adb('-s',target,'shell','dumpsys','media_session',timeout=max(3,settings.adb_poll_interval))
   if code!=0:
-   debug_event('ADB_POLL_ERROR',tv['id'],host=target,output=out);return
-  data=parse_adb_media_session(out,settings.smarttube_package)
+   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='media_session',output=out);return
+  data=parse_adb_media_session(out,settings.smarttube_package,device_uptime)
   old=pb.get(tv['id'],{})
   changed=data['state']!=old.get('state') or abs(data['media_position']-float(old.get('media_position',0) or 0))>=0.5 or data['app_id']!=old.get('app_id')
   if changed:await process_progress(Progress(target_tv=tv['id'],**data),source='adb')
@@ -255,13 +265,13 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-alpha4.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-alpha4.3',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-alpha4.2'}
+async def health():return {'ok':True,'version':'3.0.0-alpha4.3'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -518,7 +528,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-alpha4.2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha4.3','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
