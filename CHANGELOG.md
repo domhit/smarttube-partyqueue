@@ -6,6 +6,9 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 
 ## [Unreleased]
 
+### Fixed
+- V3.0.0-alpha4.1: MediaSession-RegEx korrigiert; PlaybackState wird jetzt gezielt aus `PlaybackState {state=..., position=...}` gelesen.
+
 ### Added
 - V3.0.0-alpha4: Direktes ADB-Monitoring für playing, paused, idle und Position über `dumpsys media_session`.
 - ADB-TVs benötigen für Playback und Status kein Home Assistant mehr.
