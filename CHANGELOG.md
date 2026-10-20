@@ -7,6 +7,8 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 ## [Unreleased]
 
 ### Fixed
+- V3.0.0-alpha4.5: Videoende Toleranzfenster hinzugefügt 
+- V3.0.0-alpha4.4: Verbesserte SmartTube Ende und Skip klassifikation, ADB Keys persistiert
 - V3.0.0-alpha4.3: Laufende ADB-Position wird aus PlaybackState-Basisposition, `updated`, `speed` und Geräte-Uptime extrapoliert.
 - Manueller SmartTube-Skip und Dauer-Enderkennung erhalten wieder fortlaufende Positionswerte.
 - V3.0.0-alpha4.2: Android-PlaybackState mit symbolischem Status wie `PLAYING(3)` und `PAUSED(2)` wird korrekt ausgewertet.
