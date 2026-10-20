@@ -502,8 +502,11 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
   if b.clone_current:
    values={k:current[k] for k in ('playlist_id','allowed_devices','default_tv','request_limit','repeat_window','upvote_sort','detect_external_skip','playlist_enabled')}
   else:
-   allowed=b.allowed_devices or [x['id'] for x in devices()]
-   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':b.default_tv or default_tv(),'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
+   available=devices()
+   if not available:raise HTTPException(409,'Bitte zuerst mindestens einen aktiven TV anlegen')
+   allowed=b.allowed_devices or [x['id'] for x in available]
+   selected_default=b.default_tv or default_tv()
+   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':selected_default,'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
   r=c.execute("INSERT INTO parties(name,playlist_id,allowed_devices,default_tv,request_limit,repeat_window,queue_locked,upvote_sort,detect_external_skip,playlist_enabled,active,started_at,ended_at) VALUES(?,?,?,?,?,?,0,?,?,?,?,CURRENT_TIMESTAMP,NULL)",(name,values['playlist_id'],values['allowed_devices'],values['default_tv'],values['request_limit'],values['repeat_window'],values['upvote_sort'],values['detect_external_skip'],values['playlist_enabled'],1))
  pb.clear();guard.clear()
  for item in play_pending.values():

@@ -6,18 +6,10 @@ triggers:
     webhook_id: smarttube_partyqueue_play
     allowed_methods: [POST]
     local_only: true
-conditions:
-  - condition: template
-    value_template: "{{ trigger.json.target_tv in ['xi4k','ke75','kd70','fiwo','fi4k'] }}"
 actions:
-  - choose:
-      - conditions: "{{ trigger.json.target_tv == 'xi4k' }}"
-        sequence: [{action: androidtv.adb_command, target: {entity_id: media_player.buro_androidtv_gastezimmer}, data: {command: 'am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable'}}]
-      - conditions: "{{ trigger.json.target_tv == 'ke75' }}"
-        sequence: [{action: androidtv.adb_command, target: {entity_id: media_player.tv_game_adb}, data: {command: 'am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable'}}]
-      - conditions: "{{ trigger.json.target_tv == 'kd70' }}"
-        sequence: [{action: androidtv.adb_command, target: {entity_id: media_player.schlafzimmer_tv_schlafzimmer}, data: {command: 'am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable'}}]
-      - conditions: "{{ trigger.json.target_tv == 'fiwo' }}"
-        sequence: [{action: androidtv.adb_command, target: {entity_id: media_player.wohnzimmer_firetv_wohnzimmer}, data: {command: 'am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable'}}]
-      - conditions: "{{ trigger.json.target_tv == 'fi4k' }}"
-        sequence: [{action: androidtv.adb_command, target: {entity_id: media_player.fire_tv_4k_max}, data: {command: 'am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable'}}]
+  - action: androidtv.adb_command
+    target:
+      entity_id: media_player.android_tv
+    data:
+      command: >-
+        am start -a android.intent.action.VIEW -d "{{ trigger.json.url }}" org.smarttube.stable

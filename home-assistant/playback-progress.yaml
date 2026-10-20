@@ -2,11 +2,9 @@ alias: SmartTube PartyQueue - Fortschritt und Videoende
 mode: parallel
 max: 25
 triggers:
-  - {trigger: state, entity_id: media_player.xiaomi_gastezimmer, id: xi4k}
-  - {trigger: state, entity_id: media_player.ke75_spielzimmer, id: ke75}
-  - {trigger: state, entity_id: media_player.kd70_schlafzimmer, id: kd70}
-  - {trigger: state, entity_id: media_player.firetv_wohnzimmer, id: fiwo}
-  - {trigger: state, entity_id: media_player.firetv_partykeller, id: fi4k}
+  - trigger: state
+    entity_id: media_player.android_tv
+    id: wohnzimmer
 conditions:
   - condition: template
     value_template: "{{ trigger.to_state.state in ['playing','paused','idle'] }}"

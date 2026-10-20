@@ -1,0 +1,12 @@
+.git
+.github
+.env
+adb
+data
+__pycache__
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
+*.zip
+.DS_Store

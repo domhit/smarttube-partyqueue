@@ -56,7 +56,7 @@ rest_command:
 - `media_position`
 - `app_id`
 
-Die Trigger-IDs muessen den PartyQueue-TV-IDs entsprechen.
+Die Trigger-IDs müssen den in der PartyQueue-WebUI angelegten TV-IDs entsprechen.
 
 Beispiel:
 
@@ -67,12 +67,7 @@ triggers:
     id: wohnzimmer
 ```
 
-Dazu passend:
-
-```env
-TV_DEVICES=wohnzimmer|TV Wohnzimmer
-DEFAULT_TV=wohnzimmer
-```
+Dazu passend wird in der PartyQueue-WebUI ein TV mit der internen ID `wohnzimmer` und dem Modus `Home Assistant` angelegt.
 
 ## 4. SmartTube-Startautomation
 

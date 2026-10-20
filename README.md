@@ -5,12 +5,12 @@ SmartTube PartyQueue ist eine webbasierte Musik-Wunschliste fuer Partys mit Smar
 > **Entwicklungsstand:** V3.0.0-beta1 auf `develop`  
 > **Stabiler Release:** V2.8.3 auf `main`
 > **Status:** Auf mehreren echten Partys produktiv getestet  
-> **Aktuelle Architektur:** Docker + Home Assistant + ADB/Android TV  
-> **Geplant fuer V3.0:** Direkte ADB-Anbindung; Home Assistant wird optional
+> **Aktuelle Architektur:** Docker + SQLite + direktes ADB/Android TV; Home Assistant optional  
+> **V3-Status:** Direkte ADB-Anbindung, TV-Editor und ADB-Pairing über die WebUI
 > 
 ### Beta-Status
 
-V3.0.0-beta1 ist der erste Release der neuen Standalone-Architektur.
+V3.0.0-beta2 erweitert die Standalone-Architektur um den TV-Editor und ADB-Pairing direkt in der WebUI.
 
 Die Wiedergabesteuerung und die MediaSession-Auswertung können direkt über ADB erfolgen. Für diese Geräte ist Home Assistant nicht mehr erforderlich.
 
@@ -139,7 +139,7 @@ Die Hostoberflaeche ist in vier Tabs gegliedert:
 
 ## Playback und Fehlerbehandlung
 
-SmartTube PartyQueue verarbeitet die von Home Assistant uebermittelten MediaSession-Daten und unterstuetzt:
+SmartTube PartyQueue liest MediaSession-Daten bei ADB-Geräten direkt aus. Alternativ kann Home Assistant als Transport verwendet werden. Unterstützt werden:
 
 - Normales Titelende
 - Manuellen Skip in der Hostoberflaeche
@@ -227,13 +227,8 @@ cd smarttube-partyqueue
 cp .env.example .env
 ```
 
-Danach `.env` bearbeiten. Mindestens erforderlich sind:
+Danach `.env` bearbeiten. Nur `ADMIN_PASSWORD` muss gesetzt werden; `DATA_DIR=/app/data` kann beim Standard-Compose unverändert bleiben. YouTube-, Home-Assistant-, Playback- und TV-Einstellungen erfolgen nach dem Start in der WebUI.
 
-- `YOUTUBE_API_KEY`
-- `ADMIN_PASSWORD`
-- `HA_URL`
-- `DEFAULT_TV`
-- `TV_DEVICES`
 
 ### 3. Container bauen und starten
 
@@ -258,25 +253,20 @@ Erwartete Antwort:
 ```json
 {
   "ok": true,
-  "version": "2.8.3"
+  "version": "3.0.0-beta2"
 }
 ```
 
 ## Konfiguration
 
-Die vollstaendige Variablenreferenz befindet sich in [docs/configuration.md](docs/configuration.md).
-
-Beispiel:
+Die `.env` enthält nur die Bootstrap-Werte. Die vollständige Referenz befindet sich in [docs/configuration.md](docs/configuration.md).
 
 ```env
-TZ=Europe/Berlin
-YOUTUBE_API_KEY=replace_me
-HA_URL=http://homeassistant.local:8123
-HA_WEBHOOK_ID=smarttube_partyqueue_play
 ADMIN_PASSWORD=change-me
-DEFAULT_TV=ke75
-TV_DEVICES=xi4k|Xiaomi Gaestezimmer,ke75|KE75 Medienzimmer
+DATA_DIR=/app/data
 ```
+
+Nach dem Containerstart den YouTube API Key unter **Host → Einstellungen** setzen und TVs unter **Host → TVs** anlegen.
 
 ## Home Assistant
 
@@ -292,7 +282,7 @@ home-assistant/
 └── video-ended-example.yaml
 ```
 
-Die TV-IDs in Home Assistant muessen exakt den Eintraegen in `TV_DEVICES` entsprechen.
+Die Home-Assistant Trigger-ID muss exakt der in der PartyQueue-WebUI angelegten TV-ID entsprechen.
 
 ## Verwendung
 

@@ -6,6 +6,25 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 
 ## [Unreleased]
 
+### Changed
+
+- `.env.example` auf `ADMIN_PASSWORD` und `DATA_DIR` als reine Bootstrap-Konfiguration reduziert.
+- TVs und Laufzeiteinstellungen werden ausschließlich über WebUI und SQLite verwaltet.
+- Neue Installationen starten ohne persönliche oder Demo-TV-Einträge.
+- README und Konfigurationsdokumentation auf den Standalone-Einrichtungsablauf aktualisiert.
+
+### Added
+
+- GitHub-Actions-Workflow für Multi-Arch-Builds und Veröffentlichung in GHCR.
+- Build-Provenance, SBOM und GitHub-Actions-Buildcache.
+
+### Removed
+
+- Legacy-Umgebungsvariablen `DEFAULT_TV` und `TV_DEVICES`.
+- Gerätespezifische Standardwerte und Home-Assistant-Beispiele.
+- Automatische Erstellung einer Standard-Party aus Env-Gerätelisten.
+
+
 ## [3.0.0-beta1] - 2026-10-20
 
 ### Added
