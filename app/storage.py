@@ -9,7 +9,7 @@ SETTING_TYPES={
 }
 
 def list_tvs(enabled_only=False):
- q="SELECT * FROM tvs"+(" WHERE enabled=1" if enabled_only else "")+" ORDER BY is_default DESC,name COLLATE NOCASE,id"
+ q="SELECT * FROM tvs"+(" WHERE enabled=1" if enabled_only else "")+" ORDER BY name COLLATE NOCASE,id"
  with conn() as c:return [dict(r) for r in c.execute(q)]
 
 def get_tv(tv_id):
@@ -17,21 +17,20 @@ def get_tv(tv_id):
   r=c.execute("SELECT * FROM tvs WHERE id=?",(tv_id,)).fetchone();return dict(r) if r else None
 
 def save_tv(data,old_id=None):
- tv_id=data["id"].strip();name=data["name"].strip()
+ tv_id=data["id"].strip();name=data["name"].strip();mode=data.get("connection_mode","ha").strip().lower()
  if not tv_id or not re_id(tv_id):raise ValueError("TV-ID darf nur Buchstaben, Zahlen, Punkt, Minus und Unterstrich enthalten")
  if not name:raise ValueError("TV-Name fehlt")
+ if mode not in ("ha","adb"):raise ValueError("Verbindungsmodus muss ha oder adb sein")
  old_id=old_id or tv_id
+ values=(tv_id,name,data.get("host",data.get("ip_address","")).strip(),int(data.get("enabled",True)),int(data.get("is_default",False)),data.get("ha_entity","").strip(),"",mode)
  with conn() as c:
   if old_id!=tv_id and c.execute("SELECT 1 FROM tvs WHERE id=?",(tv_id,)).fetchone():raise ValueError("TV-ID existiert bereits")
   exists=c.execute("SELECT 1 FROM tvs WHERE id=?",(old_id,)).fetchone()
-  values=(tv_id,name,data.get("host",data.get("ip_address","")).strip(),int(data.get("enabled",True)),int(data.get("is_default",False)),data.get("ha_entity","").strip(),"")
   if exists:
-   c.execute("UPDATE tvs SET id=?,name=?,ip_address=?,enabled=?,is_default=?,ha_entity=?,adb_serial=? WHERE id=?",values+(old_id,))
-   if old_id!=tv_id:
-    c.execute("UPDATE parties SET default_tv=? WHERE default_tv=?",(tv_id,old_id))
-  else:c.execute("INSERT INTO tvs(id,name,ip_address,enabled,is_default,ha_entity,adb_serial) VALUES(?,?,?,?,?,?,?)",values)
-  if data.get("is_default"):
-   c.execute("UPDATE tvs SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END",(tv_id,))
+   c.execute("UPDATE tvs SET id=?,name=?,ip_address=?,enabled=?,is_default=?,ha_entity=?,adb_serial=?,connection_mode=? WHERE id=?",values+(old_id,))
+   if old_id!=tv_id:c.execute("UPDATE parties SET default_tv=? WHERE default_tv=?",(tv_id,old_id))
+  else:c.execute("INSERT INTO tvs(id,name,ip_address,enabled,is_default,ha_entity,adb_serial,connection_mode) VALUES(?,?,?,?,?,?,?,?)",values)
+  if data.get("is_default"):c.execute("UPDATE tvs SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END",(tv_id,))
  return get_tv(tv_id)
 
 def re_id(value):

@@ -58,7 +58,7 @@ class PlaylistReorder(BaseModel):playlist_id:int;ids:list[int]
 class PlaylistBulk(BaseModel):source_playlist_id:int;target_playlist_id:int;item_ids:list[int];mode:str='copy'
 class PlaylistItemPatch(BaseModel):enabled:bool
 class TvConfig(BaseModel):
- id:str;name:str;host:str='';enabled:bool=True;is_default:bool=False;ha_entity:str=''
+ id:str;name:str;host:str='';enabled:bool=True;is_default:bool=False;ha_entity:str='';connection_mode:str='ha'
 class RuntimeSettingsPatch(BaseModel):
  values:dict
 class TvEnabledPatch(BaseModel):enabled:bool
@@ -99,8 +99,22 @@ async def cast():
   try:await w.send_json(s)
   except:dead.append(w)
  for w in dead:clients.discard(w)
-async def send_play_webhook(x,attempt):
- debug_event('PLAY_REQUEST',x['target_tv'],queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
+def adb_target(host):
+ host=(host or '').strip()
+ if not host:return None
+ return host if ':' in host else host+':5555'
+
+async def run_adb(*args,timeout=12):
+ proc=await asyncio.create_subprocess_exec('adb',*args,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
+ try:out,_=await asyncio.wait_for(proc.communicate(),timeout=timeout)
+ except asyncio.TimeoutError:
+  try:proc.kill()
+  except:pass
+  raise
+ return proc.returncode,out.decode(errors='replace').strip()
+
+async def send_play_ha(x,attempt):
+ debug_event('PLAY_REQUEST',x['target_tv'],transport='ha',queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
  try:
   async with httpx.AsyncClient(timeout=settings.play_webhook_timeout) as c:
    r=await asyncio.wait_for(c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package}),timeout=settings.play_webhook_timeout)
@@ -111,6 +125,33 @@ async def send_play_webhook(x,attempt):
  except Exception as e:
   debug_event('PLAY_WEBHOOK_ERROR',x['target_tv'],queue_id=x.get('id'),error=repr(e),attempt=attempt);return False
 
+async def send_play_adb(x,tv,attempt):
+ target=adb_target(tv.get('ip_address'))
+ debug_event('PLAY_REQUEST',x['target_tv'],transport='adb',host=target,queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
+ if not target:
+  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='Kein Host eingetragen');return False
+ try:
+  connect_code,connect_out=await run_adb('connect',target,timeout=settings.play_webhook_timeout)
+  if connect_code!=0 or ('connected to' not in connect_out.lower() and 'already connected' not in connect_out.lower()):
+   debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,stage='connect',output=connect_out);return False
+  url=f"https://www.youtube.com/watch?v={x['video_id']}"
+  code,out=await run_adb('-s',target,'shell','am','start','-a','android.intent.action.VIEW','-d',url,settings.smarttube_package,timeout=settings.play_webhook_timeout)
+  ok=code==0
+  debug_event('PLAY_ADB_OK' if ok else 'PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,host=target,output=out)
+  return ok
+ except asyncio.TimeoutError:
+  debug_event('PLAY_ADB_TIMEOUT',x['target_tv'],queue_id=x.get('id'),attempt=attempt,timeout=settings.play_webhook_timeout);return False
+ except FileNotFoundError:
+  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='ADB ist nicht installiert');return False
+ except Exception as e:
+  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error=repr(e));return False
+
+async def send_play_command(x,attempt):
+ tv=get_tv(x['target_tv'])
+ if not tv:
+  debug_event('PLAY_TRANSPORT_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='TV nicht gefunden');return False
+ return await send_play_adb(x,tv,attempt) if tv.get('connection_mode')=='adb' else await send_play_ha(x,attempt)
+
 async def play_watchdog(tv,queue_id,x):
  try:
   debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout)
@@ -118,7 +159,7 @@ async def play_watchdog(tv,queue_id,x):
   pending=play_pending.get(tv)
   if not pending or pending['queue_id']!=queue_id:return
   arm_start_guard(tv,'play_retry');debug_event('PLAY_RETRY',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'))
-  await send_play_webhook(x,2)
+  await send_play_command(x,2)
   await asyncio.sleep(settings.play_retry_timeout)
   pending=play_pending.get(tv)
   if pending and pending['queue_id']==queue_id:
@@ -132,7 +173,7 @@ async def play(x):
  arm_start_guard(tv,'play_request')
  pending={'queue_id':x['id'],'video_id':x.get('video_id'),'task':None,'requested':time.monotonic()};play_pending[tv]=pending
  pending['task']=asyncio.create_task(play_watchdog(tv,x['id'],dict(x)))
- asyncio.create_task(send_play_webhook(dict(x),1));debug_event('PLAY_DISPATCHED',tv,queue_id=x['id'],attempt=1)
+ asyncio.create_task(send_play_command(dict(x),1));debug_event('PLAY_DISPATCHED',tv,queue_id=x['id'],attempt=1)
 
 def base(c,p,tv):
  if not p['playlist_enabled'] or not p['playlist_id']:return None
@@ -166,13 +207,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();apply_runtime_settings(settings);yield
-app=FastAPI(version='3.0.0-alpha2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-alpha3',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-alpha2'}
+async def health():return {'ok':True,'version':'3.0.0-alpha3'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -422,7 +463,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-alpha2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha3','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
