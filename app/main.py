@@ -265,13 +265,13 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-alpha4.3',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-alpha4.4',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-alpha4.3'}
+async def health():return {'ok':True,'version':'3.0.0-alpha4.4'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -484,27 +484,35 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
   if not task.done():task.cancel()
  idle.clear();await cast();return {'ok':True,'id':r.lastrowid}
 async def process_progress(b:Progress,source='home_assistant'):
- p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_pos=float(old.get('media_position',0) or 0);new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
+ p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_state=old.get('state');old_pos=float(old.get('media_position',0) or 0);new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
  pb[tv]={'state':b.state,'media_position':new_pos,'app_id':b.app_id,'received':now,'source':source}
  pending=play_pending.get(tv)
- if pending and b.state=='playing' and b.app_id==settings.smarttube_package:
+ if pending and b.state in ('playing','buffering') and b.app_id==settings.smarttube_package:
   if new_pos<=settings.play_confirm_max_position:
    play_pending.pop(tv,None)
    if pending.get('task') and not pending['task'].done():pending['task'].cancel()
-   debug_event('PLAY_CONFIRMED',tv,queue_id=pending['queue_id'],video_id=pending.get('video_id'),position=round(new_pos,3),latency=round(now-pending['requested'],3))
-  else:debug_event('PLAY_CONFIRM_REJECTED',tv,queue_id=pending['queue_id'],position=round(new_pos,3),max_position=settings.play_confirm_max_position)
+   debug_event('PLAY_CONFIRMED',tv,queue_id=pending['queue_id'],video_id=pending.get('video_id'),position=round(new_pos,3),latency=round(now-pending['requested'],3),state=b.state)
+  else:debug_event('PLAY_CONFIRM_REJECTED',tv,queue_id=pending['queue_id'],position=round(new_pos,3),max_position=settings.play_confirm_max_position,state=b.state)
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
- debug_event('PROGRESS',tv,source=source,state=b.state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
- if r and b.state=='playing' and b.app_id==settings.smarttube_package:
-  end_match=bool(r['duration_seconds'] and new_pos>=r['duration_seconds']-settings.prestart_seconds)
-  skip_match=bool(p['detect_external_skip'] and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and now>=guard.get(tv,0))
-  debug_event('DECISION',tv,end_match=end_match,skip_match=skip_match,skip_enabled=bool(p['detect_external_skip']),old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(r['duration_seconds']-settings.prestart_seconds,3) if r['duration_seconds'] else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
+ duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None
+ valid_app=b.app_id==settings.smarttube_package;active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
+ end_match=bool(r and valid_app and active_state and duration and new_pos>=end_threshold)
+ reset_match=bool(r and valid_app and active_state and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
+ idle_end=bool(r and b.state=='idle' and old_pos>=end_threshold) if end_threshold is not None else False
+ idle_skip=bool(r and b.state=='idle' and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
+ debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
+ if r and valid_app and active_state:
+  debug_event('DECISION',tv,end_match=end_match,skip_match=reset_match,skip_enabled=bool(p['detect_external_skip']),state=b.state,old_state=old_state,old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(end_threshold,3) if end_threshold is not None else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
   if end_match:
-   guard[tv]=time.monotonic()+settings.prestart_idle_guard;debug_event('END_DETECTED',tv,position=round(new_pos,3),duration=r['duration_seconds'],new_guard_seconds=settings.prestart_idle_guard);await done(tv,'played','duration_threshold')
-  elif skip_match:
-   debug_event('EXTERNAL_SKIP_DETECTED',tv,old_position=round(old_pos,3),new_position=round(new_pos,3));await done(tv,'skipped','position_reset')
+   guard[tv]=time.monotonic()+settings.prestart_idle_guard;debug_event('END_DETECTED',tv,position=round(new_pos,3),duration=r['duration_seconds'],state=b.state,new_guard_seconds=settings.prestart_idle_guard);await done(tv,'played','duration_threshold');return {'ok':True}
+  if reset_match:
+   debug_event('EXTERNAL_SKIP_DETECTED',tv,old_position=round(old_pos,3),new_position=round(new_pos,3),old_state=old_state,new_state=b.state,method='position_reset');await done(tv,'skipped','position_reset');return {'ok':True}
+ elif r and b.state=='idle' and idle_end:
+  debug_event('END_DETECTED',tv,position=round(old_pos,3),duration=r['duration_seconds'],state='idle',method='idle_after_end');await done(tv,'played','idle_after_end');return {'ok':True}
+ elif r and b.state=='idle' and idle_skip:
+  debug_event('EXTERNAL_SKIP_DETECTED',tv,old_position=round(old_pos,3),new_position=0,old_state=old_state,new_state='idle',method='idle_before_end');await done(tv,'skipped','idle_before_end');return {'ok':True}
  elif r:
-  debug_event('DECISION_SKIPPED',tv,reason='state_or_app_mismatch',state=b.state,app_id=b.app_id,expected_app=settings.smarttube_package)
+  debug_event('DECISION_SKIPPED',tv,reason='state_or_app_mismatch',state=b.state,app_id=b.app_id,expected_app=settings.smarttube_package,idle_end=idle_end,idle_skip=idle_skip)
  if b.state=='idle' and now>=guard.get(tv,0):
   debug_event('IDLE_TIMER_SCHEDULED',tv,delay=settings.idle_fallback_delay)
   async def f():
@@ -528,7 +536,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-alpha4.3','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha4.4','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
