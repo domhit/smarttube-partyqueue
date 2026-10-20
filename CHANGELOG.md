@@ -6,32 +6,57 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 
 ## [Unreleased]
 
-### Fixed
-- V3.0.0-alpha4.5: Videoende Toleranzfenster hinzugefügt 
-- V3.0.0-alpha4.4: Verbesserte SmartTube Ende und Skip klassifikation, ADB Keys persistiert
-- V3.0.0-alpha4.3: Laufende ADB-Position wird aus PlaybackState-Basisposition, `updated`, `speed` und Geräte-Uptime extrapoliert.
-- Manueller SmartTube-Skip und Dauer-Enderkennung erhalten wieder fortlaufende Positionswerte.
-- V3.0.0-alpha4.2: Android-PlaybackState mit symbolischem Status wie `PLAYING(3)` und `PAUSED(2)` wird korrekt ausgewertet.
-- V3.0.0-alpha4.1: MediaSession-RegEx korrigiert; PlaybackState wird jetzt gezielt aus `PlaybackState {state=..., position=...}` gelesen.
+## [3.0.0-beta1] - 2026-10-20
 
 ### Added
-- V3.0.0-alpha4: Direktes ADB-Monitoring für playing, paused, idle und Position über `dumpsys media_session`.
-- ADB-TVs benötigen für Playback und Status kein Home Assistant mehr.
-- Konfigurierbares ADB-Abfrageintervall und neue Diagnoseevents.
-- V3.0.0-alpha3: Wiedergabestart wahlweise über Home Assistant oder direkt per ADB pro TV.
-- ADB-Transport mit Connect, SmartTube VIEW-Intent, Watchdog-Retry und Diagnoseevents.
-- Stabile alphabetische TV-Liste ohne Sprung beim Wechsel des Standardgeräts.
-- V3.0.0-alpha2: Host statt IP, direkter Standardgerät-Radiobutton, Aktiv-Schalter und ADB-Verbindungstest.
-- V3.0.0-alpha1: TV- und Laufzeiteinstellungen in SQLite.
-- Neue Host-Tabs fuer TV-Verwaltung und Einstellungen.
-- Einmaliger Import der bestehenden `.env`-Werte.
 
+- Direkte ADB-Wiedergabe ohne Home Assistant
+- Direkte MediaSession-Auswertung über `dumpsys media_session`
+- TV-Verwaltung vollständig in SQLite
+- Laufzeiteinstellungen vollständig in SQLite
+- TV-Management über die Weboberfläche
+- ADB-Verbindungstest je TV
+- Auswahl des Transportlayers pro Gerät:
+  - Home Assistant
+  - Direktes ADB
+- Persistente Speicherung der ADB-Schlüssel über `/root/.android`
+- Konfigurierbares ADB-Abfrageintervall
+- Erweiterte Playback-Diagnose für ADB- und Home-Assistant-Transport
+
+### Changed
+
+- Home Assistant ist für die Wiedergabesteuerung nicht mehr erforderlich
+- Geräte werden nicht mehr aus `TV_DEVICES` verwendet, sondern aus der SQLite-Datenbank
+- Laufzeiteinstellungen werden nicht mehr aus der `.env` verwendet, sondern aus der SQLite-Datenbank
+- TV-Verwaltung erfolgt über die WebUI
+- Wiedergabestatus kann direkt über Android MediaSession gelesen werden
+
+### Fixed
+
+- Direkte Erkennung von SmartTube-Skips
+- SponsorBlock-Sprünge werden korrekt verarbeitet
+- PLAY_CONFIRM-Watchdog arbeitet mit ADB und Home Assistant
+- Externe Skip-Erkennung bei Positionsrücksetzung
+- Enderkennung über Videodauer
+- Enderkennung über Idle-Fallback
+- Start-Guard gegen Skip-Kaskaden
+- Wiedergabe-Recovery nach fehlgeschlagenen Starts
+- Persistente ADB-Berechtigungen bei Container-Rebuilds
+
+### Status
+
+- Mehrere reale Geräte erfolgreich getestet
+- Xiaomi Android TV erfolgreich ohne Home Assistant betrieben
+- First Standalone ADB Beta
+  
 ### Geplant
 
-- Standalone-Core mit direkter ADB-Anbindung
-- TV-Verwaltung in der WebUI
-- Home Assistant als optionale Integration
-- GitHub Container Registry und Portainer-Deployment
+- TV-Verwaltung in der WebUI mit TV-Editor statt Prompt-Dialog
+- ADB Pairing/Connect direkt in der WebUI
+- GHCR (GitHub Container Registry)
+- Portainer-Deployment
+- Home Assistant als optionale Integration dokumentieren
+- Beta-Test auf allen verfügbaren Geräten
 
 ## [2.8.3] - 2026-10-19
 

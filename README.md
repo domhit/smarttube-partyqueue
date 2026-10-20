@@ -2,11 +2,33 @@
 
 SmartTube PartyQueue ist eine webbasierte Musik-Wunschliste fuer Partys mit SmartTube auf Android TV und Fire TV. Gaeste reichen ueber eine mobilfreundliche Weboberflaeche Musikwünsche ein, bewerten offene Titel und geben dem aktuell laufenden Song einen Hype. Der Host verwaltet Partys, Warteschlangen, Playlists, Abspieler, Exporte und die Playback-Diagnose ueber eine separate Administrationsoberflaeche.
 
-> **Entwicklungsstand:** V3.0.0-alpha4 auf `develop`  
-> **Stabiler Release:** V2.8.3 auf `main`  
+> **Entwicklungsstand:** V3.0.0-beta1 auf `develop`  
+> **Stabiler Release:** V2.8.3 auf `main`
 > **Status:** Auf mehreren echten Partys produktiv getestet  
 > **Aktuelle Architektur:** Docker + Home Assistant + ADB/Android TV  
 > **Geplant fuer V3.0:** Direkte ADB-Anbindung; Home Assistant wird optional
+> 
+### Beta-Status
+
+V3.0.0-beta1 ist der erste Release der neuen Standalone-Architektur.
+
+Die Wiedergabesteuerung und die MediaSession-Auswertung können direkt über ADB erfolgen. Für diese Geräte ist Home Assistant nicht mehr erforderlich.
+
+Bereits umgesetzt:
+
+- Direkte SmartTube-Steuerung über ADB
+- Direkte MediaSession-Auswertung
+- TV-Verwaltung über die WebUI
+- Einstellungen über die WebUI
+- ADB-Verbindungstest
+- SmartTube-Skip-Erkennung
+- SponsorBlock-Erkennung
+- Enderkennung
+- Playback-Watchdog
+- Persistente ADB-Schlüssel
+
+Home Assistant kann weiterhin parallel genutzt werden und bleibt als optionale Integration erhalten.
+
 
 [![Version](https://img.shields.io/badge/version-2.8.3-blue)](CHANGELOG.md)
 [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
