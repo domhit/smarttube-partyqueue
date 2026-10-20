@@ -194,7 +194,7 @@ Optional:
 ### 1. Repository klonen
 
 ```bash
-git clone https://github.com/domhit/smarttube-partyqueue
+git clone <REPOSITORY-URL>
 cd smarttube-partyqueue
 ```
 

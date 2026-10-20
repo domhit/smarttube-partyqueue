@@ -19,8 +19,10 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,PageBreak
 from .config import settings
 from .db import conn,init_db
+from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings
 from .youtube import video_id,details,search,playlist,quota
-D=settings.parsed_devices();IDS={x['id'] for x in D};clients=set();locks={};pb={};guard={};idle={};play_pending={}
+clients=set();locks={};pb={};guard={};idle={};play_pending={}
+def devices(enabled_only=True):return list_tvs(enabled_only)
 log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
 def debug_event(kind,tv=None,**data):
  global diag_seq
@@ -29,7 +31,7 @@ def debug_event(kind,tv=None,**data):
  diag.append(event);log.info('[PLAYBACK_DEBUG] %s',json.dumps(event,ensure_ascii=False,default=str));return event
 def current_diag():
  now=time.monotonic();out={}
- for d in D:
+ for d in devices():
   tv=d['id'];x=pb.get(tv,{})
   out[tv]={'name':d['name'],'state':x.get('state'),'position':x.get('media_position'),'app_id':x.get('app_id'),'age_seconds':round(now-x.get('received',now),3) if x else None,'guard_remaining':round(max(0,guard.get(tv,0)-now),3),'idle_pending':bool(tv in idle and not idle[tv].done())}
  return out
@@ -55,6 +57,10 @@ class PlaylistImport(BaseModel):playlist_id:int;playlist:str
 class PlaylistReorder(BaseModel):playlist_id:int;ids:list[int]
 class PlaylistBulk(BaseModel):source_playlist_id:int;target_playlist_id:int;item_ids:list[int];mode:str='copy'
 class PlaylistItemPatch(BaseModel):enabled:bool
+class TvConfig(BaseModel):
+ id:str;name:str;ip_address:str='';enabled:bool=True;is_default:bool=False;ha_entity:str='';adb_serial:str=''
+class RuntimeSettingsPatch(BaseModel):
+ values:dict
 class PartyCreate(BaseModel):
  name:str
  clone_current:bool=False
@@ -75,17 +81,17 @@ def tvok(x,p):
  x=x or p['default_tv']
  if x not in allow(p):raise HTTPException(403,'Abspieler nicht freigegeben')
  return x
-def pub(p):return {**p,'allowed_devices':[x for x in D if x['id'] in allow(p)]}
+def pub(p):return {**p,'allowed_devices':[x for x in devices() if x['id'] in allow(p)]}
 async def state():
  p=party()
  with conn() as c:
   pls=[dict(r) for r in c.execute('SELECT p.*,COUNT(i.id) item_count FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id GROUP BY p.id ORDER BY p.name')]
-  if not p:return {'party':None,'devices':[],'all_devices':D,'playlists':pls,'queue':[],'current':{},'history':[],'playback':{},'quota':quota()}
+  if not p:return {'party':None,'devices':[],'all_devices':devices(),'playlists':pls,'queue':[],'current':{},'history':[],'playback':{},'quota':quota()}
   q=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
  cm={x['target_tv']:x for x in cu};now=time.monotonic();play={}
  for tv,x in pb.items():
   pos=x['media_position']+(max(0,now-x['received']) if x['state']=='playing' else 0);du=float(cm.get(tv,{}).get('duration_seconds')or 0);play[tv]={**x,'media_position':min(pos,du) if du else pos}
- return {'party':pub(p),'devices':pub(p)['allowed_devices'],'all_devices':D,'playlists':pls,'queue':q,'current':cm,'history':hi,'playback':play,'quota':quota()}
+ return {'party':pub(p),'devices':pub(p)['allowed_devices'],'all_devices':devices(),'playlists':pls,'queue':q,'current':cm,'history':hi,'playback':play,'quota':quota()}
 async def cast():
  s=await state();dead=[]
  for w in clients:
@@ -158,14 +164,14 @@ async def metadata(v=None,u=None):
  if not a:raise HTTPException(400,'Video nicht verfügbar')
  return a[0]
 @asynccontextmanager
-async def life(app):init_db();yield
-app=FastAPI(version='2.8.3',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+async def life(app):init_db();apply_runtime_settings(settings);yield
+app=FastAPI(version='3.0.0-alpha1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'2.8.3'}
+async def health():return {'ok':True,'version':'3.0.0-alpha1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -206,6 +212,34 @@ async def hype(qid:int,b:Vote):
 
 @app.post('/api/admin/login')
 async def login(b:Auth):au(b.password);return {'ok':True}
+@app.get('/api/admin/tvs')
+async def admin_tvs(x_admin_password:str=Header(default='')):au(x_admin_password);return list_tvs(False)
+@app.post('/api/admin/tvs')
+async def admin_tv_create(b:TvConfig,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:r=save_tv(b.model_dump())
+ except ValueError as e:raise HTTPException(400,str(e))
+ await cast();return r
+@app.patch('/api/admin/tvs/{tv_id}')
+async def admin_tv_patch(tv_id:str,b:TvConfig,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:r=save_tv(b.model_dump(),tv_id)
+ except ValueError as e:raise HTTPException(400,str(e))
+ await cast();return r
+@app.delete('/api/admin/tvs/{tv_id}')
+async def admin_tv_delete(tv_id:str,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:delete_tv(tv_id)
+ except ValueError as e:raise HTTPException(409,str(e))
+ await cast();return {'ok':True}
+@app.get('/api/admin/settings')
+async def admin_settings(x_admin_password:str=Header(default='')):au(x_admin_password);return all_settings()
+@app.patch('/api/admin/settings')
+async def admin_settings_patch(b:RuntimeSettingsPatch,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:r=set_settings(b.values);apply_runtime_settings(settings)
+ except (ValueError,TypeError) as e:raise HTTPException(400,str(e))
+ await cast();return r
 @app.post('/api/admin/start')
 async def start(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);return {'started':await nxt(b.target_tv)}
 @app.post('/api/admin/skip')
@@ -308,8 +342,8 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
   if b.clone_current:
    values={k:current[k] for k in ('playlist_id','allowed_devices','default_tv','request_limit','repeat_window','upvote_sort','detect_external_skip','playlist_enabled')}
   else:
-   allowed=b.allowed_devices or [x['id'] for x in D]
-   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':b.default_tv or settings.default_tv,'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
+   allowed=b.allowed_devices or [x['id'] for x in devices()]
+   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':b.default_tv or default_tv(),'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
   r=c.execute("INSERT INTO parties(name,playlist_id,allowed_devices,default_tv,request_limit,repeat_window,queue_locked,upvote_sort,detect_external_skip,playlist_enabled,active,started_at,ended_at) VALUES(?,?,?,?,?,?,0,?,?,?,?,CURRENT_TIMESTAMP,NULL)",(name,values['playlist_id'],values['allowed_devices'],values['default_tv'],values['request_limit'],values['repeat_window'],values['upvote_sort'],values['detect_external_skip'],values['playlist_enabled'],1))
  pb.clear();guard.clear()
  for item in play_pending.values():
@@ -356,7 +390,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'2.8.3','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):

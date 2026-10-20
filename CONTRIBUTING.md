@@ -12,7 +12,7 @@ Vielen Dank fuer das Interesse an SmartTube PartyQueue.
 ## Entwicklungsumgebung
 
 ```bash
-git clone https://github.com/domhit/smarttube-partyqueue
+git clone <REPOSITORY-URL>
 cd smarttube-partyqueue
 cp .env.example .env
 docker compose up -d --build
