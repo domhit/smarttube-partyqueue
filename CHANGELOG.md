@@ -7,6 +7,7 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 ## [Unreleased]
 
 ### Added
+- V3.0.0-alpha2: Host statt IP, direkter Standardgerät-Radiobutton, Aktiv-Schalter und ADB-Verbindungstest.
 - V3.0.0-alpha1: TV- und Laufzeiteinstellungen in SQLite.
 - Neue Host-Tabs fuer TV-Verwaltung und Einstellungen.
 - Einmaliger Import der bestehenden `.env`-Werte.

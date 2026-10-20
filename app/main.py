@@ -1,4 +1,4 @@
-import asyncio,csv,html,io,json,logging,random,secrets,time
+import asyncio,csv,html,io,json,logging,random,secrets,time,re
 from xml.sax.saxutils import escape as xml_escape
 from collections import deque
 from contextlib import asynccontextmanager
@@ -19,7 +19,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,PageBreak
 from .config import settings
 from .db import conn,init_db
-from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings
+from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings,set_default_tv,set_tv_enabled
 from .youtube import video_id,details,search,playlist,quota
 clients=set();locks={};pb={};guard={};idle={};play_pending={}
 def devices(enabled_only=True):return list_tvs(enabled_only)
@@ -58,9 +58,10 @@ class PlaylistReorder(BaseModel):playlist_id:int;ids:list[int]
 class PlaylistBulk(BaseModel):source_playlist_id:int;target_playlist_id:int;item_ids:list[int];mode:str='copy'
 class PlaylistItemPatch(BaseModel):enabled:bool
 class TvConfig(BaseModel):
- id:str;name:str;ip_address:str='';enabled:bool=True;is_default:bool=False;ha_entity:str='';adb_serial:str=''
+ id:str;name:str;host:str='';enabled:bool=True;is_default:bool=False;ha_entity:str=''
 class RuntimeSettingsPatch(BaseModel):
  values:dict
+class TvEnabledPatch(BaseModel):enabled:bool
 class PartyCreate(BaseModel):
  name:str
  clone_current:bool=False
@@ -165,13 +166,13 @@ async def metadata(v=None,u=None):
  return a[0]
 @asynccontextmanager
 async def life(app):init_db();apply_runtime_settings(settings);yield
-app=FastAPI(version='3.0.0-alpha1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-alpha2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-alpha1'}
+async def health():return {'ok':True,'version':'3.0.0-alpha2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -232,6 +233,37 @@ async def admin_tv_delete(tv_id:str,x_admin_password:str=Header(default='')):
  try:delete_tv(tv_id)
  except ValueError as e:raise HTTPException(409,str(e))
  await cast();return {'ok':True}
+@app.post('/api/admin/tvs/{tv_id}/default')
+async def admin_tv_default(tv_id:str,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:r=set_default_tv(tv_id)
+ except ValueError as e:raise HTTPException(409,str(e))
+ await cast();return r
+@app.patch('/api/admin/tvs/{tv_id}/enabled')
+async def admin_tv_enabled(tv_id:str,b:TvEnabledPatch,x_admin_password:str=Header(default='')):
+ au(x_admin_password)
+ try:r=set_tv_enabled(tv_id,b.enabled)
+ except ValueError as e:raise HTTPException(409,str(e))
+ await cast();return r
+@app.post('/api/admin/tvs/{tv_id}/adb-test')
+async def admin_tv_adb_test(tv_id:str,x_admin_password:str=Header(default='')):
+ au(x_admin_password);tv=get_tv(tv_id)
+ if not tv:raise HTTPException(404,'TV nicht gefunden')
+ host=(tv.get('ip_address') or '').strip()
+ if not host:raise HTTPException(400,'Kein Host eingetragen')
+ if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
+ target=host if ':' in host else host+':5555'
+ try:
+  proc=await asyncio.create_subprocess_exec('adb','connect',target,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
+  out,_=await asyncio.wait_for(proc.communicate(),timeout=12);text=out.decode(errors='replace').strip()
+ except asyncio.TimeoutError:
+  try:proc.kill()
+  except:pass
+  raise HTTPException(504,'ADB-Verbindung hat das Zeitlimit überschritten')
+ except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
+ ok=proc.returncode==0 and ('connected to' in text.lower() or 'already connected' in text.lower())
+ debug_event('ADB_TEST',tv_id,host=target,ok=ok,output=text)
+ return {'ok':ok,'host':target,'output':text}
 @app.get('/api/admin/settings')
 async def admin_settings(x_admin_password:str=Header(default='')):au(x_admin_password);return all_settings()
 @app.patch('/api/admin/settings')
@@ -390,7 +422,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):

@@ -24,7 +24,7 @@ def save_tv(data,old_id=None):
  with conn() as c:
   if old_id!=tv_id and c.execute("SELECT 1 FROM tvs WHERE id=?",(tv_id,)).fetchone():raise ValueError("TV-ID existiert bereits")
   exists=c.execute("SELECT 1 FROM tvs WHERE id=?",(old_id,)).fetchone()
-  values=(tv_id,name,data.get("ip_address","").strip(),int(data.get("enabled",True)),int(data.get("is_default",False)),data.get("ha_entity","").strip(),data.get("adb_serial","").strip())
+  values=(tv_id,name,data.get("host",data.get("ip_address","")).strip(),int(data.get("enabled",True)),int(data.get("is_default",False)),data.get("ha_entity","").strip(),"")
   if exists:
    c.execute("UPDATE tvs SET id=?,name=?,ip_address=?,enabled=?,is_default=?,ha_entity=?,adb_serial=? WHERE id=?",values+(old_id,))
    if old_id!=tv_id:
@@ -70,3 +70,18 @@ def set_settings(values):
 
 def apply_runtime_settings(settings):
  for k,v in all_settings().items():setattr(settings,k,v)
+
+
+def set_default_tv(tv_id):
+ with conn() as c:
+  if not c.execute("SELECT 1 FROM tvs WHERE id=? AND enabled=1",(tv_id,)).fetchone():raise ValueError("Nur ein aktiver TV kann Standardgerät sein")
+  c.execute("UPDATE tvs SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END",(tv_id,))
+ return get_tv(tv_id)
+
+def set_tv_enabled(tv_id,enabled):
+ with conn() as c:
+  row=c.execute("SELECT is_default FROM tvs WHERE id=?",(tv_id,)).fetchone()
+  if not row:raise ValueError("TV nicht gefunden")
+  if row["is_default"] and not enabled:raise ValueError("Standardgerät kann nicht deaktiviert werden")
+  c.execute("UPDATE tvs SET enabled=? WHERE id=?",(int(enabled),tv_id))
+ return get_tv(tv_id)
