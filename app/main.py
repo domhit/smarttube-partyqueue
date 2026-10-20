@@ -62,6 +62,8 @@ class TvConfig(BaseModel):
 class RuntimeSettingsPatch(BaseModel):
  values:dict
 class TvEnabledPatch(BaseModel):enabled:bool
+class AdbPairRequest(BaseModel):
+ host:str;pair_port:int;pair_code:str
 class PartyCreate(BaseModel):
  name:str
  clone_current:bool=False
@@ -265,13 +267,13 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-beta1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-beta2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-beta1'}
+async def health():return {'ok':True,'version':'3.0.0-beta2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -363,6 +365,33 @@ async def admin_tv_adb_test(tv_id:str,x_admin_password:str=Header(default='')):
  ok=proc.returncode==0 and ('connected to' in text.lower() or 'already connected' in text.lower())
  debug_event('ADB_TEST',tv_id,host=target,ok=ok,output=text)
  return {'ok':ok,'host':target,'output':text}
+@app.post('/api/admin/adb/pair')
+async def admin_adb_pair(b:AdbPairRequest,x_admin_password:str=Header(default='')):
+ au(x_admin_password);host=b.host.strip();code=b.pair_code.strip()
+ if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
+ if not 1<=b.pair_port<=65535:raise HTTPException(400,'Pairing-Port ist ungültig')
+ if not re.fullmatch(r'\d{6}',code):raise HTTPException(400,'Pairing-Code muss aus 6 Ziffern bestehen')
+ pair_target=f'{host}:{b.pair_port}'
+ try:
+  rc,out=await run_adb('pair',pair_target,code,timeout=20)
+ except asyncio.TimeoutError:raise HTTPException(504,'ADB-Pairing hat das Zeitlimit überschritten')
+ except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
+ ok=rc==0 and ('successfully paired' in out.lower() or 'already paired' in out.lower())
+ debug_event('ADB_PAIR',host=pair_target,ok=ok,output=out)
+ if not ok:raise HTTPException(409,out or 'ADB-Pairing fehlgeschlagen')
+ return {'ok':True,'host':pair_target,'output':out}
+@app.post('/api/admin/adb/connect')
+async def admin_adb_connect(b:AdbPairRequest,x_admin_password:str=Header(default='')):
+ au(x_admin_password);host=b.host.strip()
+ if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
+ target=adb_target(host)
+ try:rc,out=await run_adb('connect',target,timeout=12)
+ except asyncio.TimeoutError:raise HTTPException(504,'ADB-Verbindung hat das Zeitlimit überschritten')
+ except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
+ ok=rc==0 and ('connected to' in out.lower() or 'already connected' in out.lower())
+ debug_event('ADB_CONNECT',host=target,ok=ok,output=out)
+ if not ok:raise HTTPException(409,out or 'ADB-Verbindung fehlgeschlagen')
+ return {'ok':True,'host':target,'output':out}
 @app.get('/api/admin/settings')
 async def admin_settings(x_admin_password:str=Header(default='')):au(x_admin_password);return all_settings()
 @app.patch('/api/admin/settings')
@@ -536,7 +565,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-beta1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-beta2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
