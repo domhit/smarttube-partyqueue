@@ -1,0 +1,54 @@
+name: Bug Report
+description: Fehler in SmartTube PartyQueue melden
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: PartyQueue-Version
+      placeholder: v2.8.3
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: TV / Streaming-Geraet
+      placeholder: Xiaomi TV Box, Sony Android TV, Fire TV 4K Max
+    validations:
+      required: true
+  - type: input
+    id: smarttube
+    attributes:
+      label: SmartTube-Version
+  - type: textarea
+    id: description
+    attributes:
+      label: Fehlerbeschreibung
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Schritte zur Reproduktion
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnoseereignisse / Logs
+      description: Keine Passwoerter, API-Schluessel, Domains oder oeffentlichen IP-Adressen posten.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vorabpruefung
+      options:
+        - label: Ich habe nach einem existierenden Issue gesucht.
+          required: true
+        - label: Ich habe sensible Daten aus Logs entfernt.
+          required: true

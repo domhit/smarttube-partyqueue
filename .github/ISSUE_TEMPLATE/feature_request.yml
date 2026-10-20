@@ -1,0 +1,34 @@
+name: Feature Request
+description: Neue Funktion vorschlagen
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll geloest werden?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Gewuenschte Loesung
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen oder Workarounds
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Betroffener Bereich
+      options:
+        - Gastoberflaeche
+        - Hostoberflaeche
+        - Playback
+        - Playlists
+        - Archiv / Exporte
+        - TV / ADB
+        - Home Assistant
+        - Deployment
