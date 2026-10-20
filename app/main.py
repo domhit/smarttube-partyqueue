@@ -496,9 +496,9 @@ async def process_progress(b:Progress,source='home_assistant'):
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
  duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None
  valid_app=b.app_id==settings.smarttube_package;active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
- end_match=bool(r and valid_app and active_state and duration and new_pos>=end_threshold)
+ end_match=bool(r and valid_app and active_state and duration and (new_pos>=end_threshold or (duration - new_pos)<=1.0))
  reset_match=bool(r and valid_app and active_state and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
- idle_end=bool(r and b.state=='idle' and old_pos>=end_threshold) if end_threshold is not None else False
+ idle_end=bool(r and b.state=='idle' and (old_pos>=end_threshold or (duration - old_pos)<=1.0)) if end_threshold is not None else False
  idle_skip=bool(r and b.state=='idle' and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
  debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
  if r and valid_app and active_state:
