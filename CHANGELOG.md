@@ -7,6 +7,7 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 ## [Unreleased]
 
 ### Fixed
+- V3.0.0-alpha4.2: Android-PlaybackState mit symbolischem Status wie `PLAYING(3)` und `PAUSED(2)` wird korrekt ausgewertet.
 - V3.0.0-alpha4.1: MediaSession-RegEx korrigiert; PlaybackState wird jetzt gezielt aus `PlaybackState {state=..., position=...}` gelesen.
 
 ### Added

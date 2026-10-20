@@ -210,10 +210,11 @@ def parse_adb_media_session(output,package):
  candidates=[b for b in blocks if package in b]
  if not candidates:return {'state':'idle','media_position':0,'app_id':None}
  def parse_block(block):
-  playback=re.search(r'PlaybackState\s*\{\s*state=(\d+),\s*position=(-?\d+)',block,re.IGNORECASE)
+  playback=re.search(r'PlaybackState\s*\{\s*state=(?:(?P<name>[A-Z_]+)\()?(?P<code>\d+)\)?,\s*position=(?P<position>-?\d+)',block,re.IGNORECASE)
   if not playback:return None
-  code=int(playback.group(1));position=max(0,int(playback.group(2)))/1000
-  return {'state':{3:'playing',2:'paused',6:'buffering',8:'connecting'}.get(code,'idle'),'media_position':position,'app_id':package,'_code':code}
+  code=int(playback.group('code'));position=max(0,int(playback.group('position')))/1000
+  state={3:'playing',2:'paused',6:'buffering',8:'connecting'}.get(code,'idle')
+  return {'state':state,'media_position':position,'app_id':package,'_code':code}
  parsed=[(b,parse_block(b)) for b in candidates]
  parsed=[(b,x) for b,x in parsed if x]
  if not parsed:return {'state':'idle','media_position':0,'app_id':package}
@@ -254,13 +255,13 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-alpha4.1',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-alpha4.2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-alpha4.1'}
+async def health():return {'ok':True,'version':'3.0.0-alpha4.2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -517,7 +518,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-alpha4.1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.0.0-alpha4.2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
