@@ -5,7 +5,7 @@ SETTING_TYPES={
  "youtube_search_daily_limit":int,"youtube_search_warning_at":int,"youtube_search_hard_stop_at":int,"base_playlist_recent_exclude":int,
  "prestart_seconds":float,"idle_fallback_delay":float,"prestart_idle_guard":float,"external_skip_min_previous":float,
  "external_skip_max_new":float,"play_confirm_timeout":float,"play_retry_timeout":float,"play_webhook_timeout":float,
- "play_confirm_max_position":float,"smarttube_package":str,"youtube_api_key":str,"ha_url":str,"ha_webhook_id":str,"tz":str
+ "play_confirm_max_position":float,"adb_poll_interval":float,"smarttube_package":str,"youtube_api_key":str,"ha_url":str,"ha_webhook_id":str,"tz":str
 }
 
 def list_tvs(enabled_only=False):

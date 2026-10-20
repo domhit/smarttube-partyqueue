@@ -28,7 +28,7 @@ def init_db():
   """)
   if c.execute('SELECT COUNT(*) n FROM tvs').fetchone()['n']==0:
     for tv in settings.parsed_devices():c.execute('INSERT INTO tvs(id,name,enabled,is_default) VALUES(?,?,1,?)',(tv['id'],tv['name'],int(tv['id']==settings.default_tv)))
-  defaults={k:getattr(settings,k) for k in ('tz','youtube_api_key','ha_url','ha_webhook_id','max_video_minutes','max_requests_per_guest','search_cache_hours','search_min_length','search_results','youtube_search_daily_limit','youtube_search_warning_at','youtube_search_hard_stop_at','base_playlist_recent_exclude','prestart_seconds','idle_fallback_delay','prestart_idle_guard','external_skip_min_previous','external_skip_max_new','play_confirm_timeout','play_retry_timeout','play_webhook_timeout','play_confirm_max_position','smarttube_package')}
+  defaults={k:getattr(settings,k) for k in ('tz','youtube_api_key','ha_url','ha_webhook_id','max_video_minutes','max_requests_per_guest','search_cache_hours','search_min_length','search_results','youtube_search_daily_limit','youtube_search_warning_at','youtube_search_hard_stop_at','base_playlist_recent_exclude','prestart_seconds','idle_fallback_delay','prestart_idle_guard','external_skip_min_previous','external_skip_max_new','play_confirm_timeout','play_retry_timeout','play_webhook_timeout','play_confirm_max_position','adb_poll_interval','smarttube_package')}
   for k,v in defaults.items():c.execute('INSERT OR IGNORE INTO settings_store(key,value) VALUES(?,?)',(k,str(v)))
   for n,t,d in [('guest_id','TEXT',"''"),('party_id','INTEGER','NULL'),('playlist_id','INTEGER','NULL'),('votes','INTEGER','0'),('admin_priority','INTEGER','0')]:
    if not col(c,'queue',n):c.execute(f'ALTER TABLE queue ADD COLUMN {n} {t} DEFAULT {d}')

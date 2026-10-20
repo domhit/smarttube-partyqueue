@@ -7,6 +7,9 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 ## [Unreleased]
 
 ### Added
+- V3.0.0-alpha4: Direktes ADB-Monitoring für playing, paused, idle und Position über `dumpsys media_session`.
+- ADB-TVs benötigen für Playback und Status kein Home Assistant mehr.
+- Konfigurierbares ADB-Abfrageintervall und neue Diagnoseevents.
 - V3.0.0-alpha3: Wiedergabestart wahlweise über Home Assistant oder direkt per ADB pro TV.
 - ADB-Transport mit Connect, SmartTube VIEW-Intent, Watchdog-Retry und Diagnoseevents.
 - Stabile alphabetische TV-Liste ohne Sprung beim Wechsel des Standardgeräts.
