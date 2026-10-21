@@ -9,12 +9,12 @@
 </head>
 <body>
 <main class="wrap">
-<h1>🎛️ PartyQueue V3.0.0-beta3</h1>
+<h1>🎛️ PartyQueue V3.1.0</h1>
 <section class="card"><div class="row"><input class="grow" id="pw" placeholder="Admin-Passwort" type="password"/><button id="login">Anmelden</button></div></section>
 <div class="hidden" id="panel">
 <div class="banner" id="lock"></div><nav aria-label="Host-Bereiche" class="host-tabs" role="tablist"><button aria-selected="true" class="host-tab active" data-tab="party" role="tab" type="button">Party</button><button aria-selected="false" class="host-tab" data-tab="playlist" role="tab" type="button">Playlist</button><button aria-selected="false" class="host-tab" data-tab="archive" role="tab" type="button">Archiv</button><button aria-selected="false" class="host-tab" data-tab="tvs" role="tab" type="button">TVs</button><button aria-selected="false" class="host-tab" data-tab="settings" role="tab" type="button">Einstellungen</button><button aria-selected="false" class="host-tab" data-tab="debug" role="tab" type="button">Debug</button></nav><div class="tab-page active" data-tab-page="party" role="tabpanel"><section class="card">
 <div class="editor-head"><h2>Aktive Party</h2><div class="actions"><button id="newParty">Neue Party</button><button class="secondary" id="cloneParty">Party klonen</button><button class="danger" id="closeParty">Party abschließen</button></div></div><div class="banner hidden" id="noParty"></div><div id="partyForm">
-<div class="row"><input class="grow" id="partyName"/><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"/> Grundplaylist aktiv</label></div>
+<div class="row"><input class="grow" id="partyName"/><label>Verwendete Grundplaylist <select id="partyPlaylist"></select></label><label><input id="playlistEnabled" type="checkbox"/> Grundplaylist aktiv</label><label><input id="syncMode" type="checkbox"/> Multi-TV-Sync</label></div>
 <div class="row"><select id="defaultTv"></select><label>Limit <input id="limit" min="0" type="number"/></label><label>Wiederholung <input id="repeat" min="0" type="number"/></label></div>
 
 <div class="checks" id="devices"></div><div class="party-banner-admin"><label>Partybanner (JPG, PNG oder WebP, max. 5 MB)<input id="partyBanner" type="file" accept="image/jpeg,image/png,image/webp"/></label><div id="partyBannerPreview"></div><div class="actions"><button id="uploadPartyBanner" type="button">Banner hochladen</button><button class="danger" id="deletePartyBanner" type="button">Banner löschen</button></div></div>

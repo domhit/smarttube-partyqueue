@@ -1,51 +1,38 @@
-## GitHub Container Registry
+# GitHub Container Registry
 
-Die GitHub-Actions-Workflowdatei `.github/workflows/ghcr.yml` baut und veröffentlicht das Container-Image automatisch in der GitHub Container Registry.
+Der Workflow `.github/workflows/ghcr.yml` baut Images für `linux/amd64` und `linux/arm64` und veröffentlicht sie unter:
 
-### Veröffentlichte Tags
+```text
+ghcr.io/domhit/smarttube-partyqueue
+```
+
+## Tags
 
 - Push auf `develop`: `develop` und `sha-<commit>`
-- Git-Tag `v3.0.0-beta3`: `v3.0.0-beta3`, `3.0.0-beta3` und `sha-<commit>`
-- Stabile Tags wie `v3.0.0`: zusätzlich `3.0` und gemäß Docker Metadata Action `latest`
+- Git-Tag `v3.1.0`: `v3.1.0`, `3.1.0`, `3.0` und `latest`
+- Vorabversionen: beispielsweise `v3.1.0-beta1` und `3.1.0-beta1`
 
-Das Image wird für `linux/amd64` und `linux/arm64` gebaut.
-
-### Einrichtung im GitHub-Repository
-
-1. Repository unter **Settings → Actions → General → Workflow permissions** öffnen.
-2. **Read and write permissions** aktivieren, falls die Organisation die `GITHUB_TOKEN`-Berechtigungen nicht über die Workflowdatei zulässt.
-3. Änderungen auf `develop` pushen oder einen Release-Tag veröffentlichen.
-4. Unter **Actions** den Workflow `Build and publish container image` kontrollieren.
-5. Unter **Packages** das Paket `smarttube-partyqueue` öffnen und die Sichtbarkeit auf `Public` setzen, wenn anonyme Pulls gewünscht sind.
-
-Es ist kein persönlicher Zugriffstoken für die Veröffentlichung aus GitHub Actions erforderlich. Der Workflow nutzt `GITHUB_TOKEN` mit `packages: write`.
-
-### Image lokal testen
-
-`GITHUB-OWNER` durch den kleingeschriebenen GitHub-Benutzer- oder Organisationsnamen ersetzen:
+## Pull
 
 ```bash
-docker pull ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta3
-docker run --rm ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta3 python -c "import app.main; print(app.main.app.version)"
+docker pull ghcr.io/domhit/smarttube-partyqueue:3.1.0
 ```
 
-### Betrieb mit Docker Compose
+Für den aktuellen stabilen Release:
 
 ```bash
-cp docker-compose.ghcr.yml docker-compose.yml
-sed -i 's/GITHUB-OWNER/dein-github-name/g' docker-compose.yml
-docker compose pull
-docker compose up -d
+docker pull ghcr.io/domhit/smarttube-partyqueue:latest
 ```
 
-Die Verzeichnisse `./data` und `./adb` bleiben persistent. Das ADB-Verzeichnis enthält private Schlüssel und darf nicht veröffentlicht oder eingecheckt werden.
-
-### Private Pakete
-
-Für ein privates GHCR-Paket muss sich der Docker-Host vor dem Pull anmelden:
+## Veröffentlichung
 
 ```bash
-echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB-BENUTZER --password-stdin
+git tag -a v3.1.0 -m "SmartTube PartyQueue 3.1.0"
+git push origin v3.1.0
 ```
 
-Der Token benötigt für Pulls mindestens `read:packages`.
+Der Tag löst den Workflow aus. Das Paket muss auf GitHub auf `Public` stehen, wenn anonyme Pulls erlaubt sein sollen.
+
+## Portainer und Compose
+
+`docker-compose.ghcr.yml` ist für diesen Release auf `3.1.0` festgesetzt. Wer automatisch dem neuesten stabilen Release folgen möchte, kann den Tag auf `latest` ändern.

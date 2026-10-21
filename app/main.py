@@ -21,7 +21,7 @@ from .config import settings
 from .db import conn,init_db
 from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings,set_default_tv,set_tv_enabled
 from .youtube import video_id,details,search,playlist,quota
-clients=set();locks={};pb={};guard={};idle={};play_pending={};adb_monitor_task=None
+clients=set();locks={};pb={};guard={};idle={};play_pending={};sync_hold={};sync_last_state={};adb_monitor_task=None
 def devices(enabled_only=True):return list_tvs(enabled_only)
 log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
 def debug_event(kind,tv=None,**data):
@@ -48,7 +48,7 @@ class Tv(BaseModel):target_tv:str
 class QueueReorder(BaseModel):target_tv:str;ids:list[int]
 class Progress(BaseModel):target_tv:str;state:str;media_position:float=0;app_id:Optional[str]=None
 class Vote(BaseModel):guest_id:str
-class PartyPatch(BaseModel):name:Optional[str]=None;playlist_id:Optional[int]=None;allowed_devices:Optional[list[str]]=None;default_tv:Optional[str]=None;request_limit:Optional[int]=None;repeat_window:Optional[int]=None;queue_locked:Optional[bool]=None;upvote_sort:Optional[bool]=None;detect_external_skip:Optional[bool]=None;playlist_enabled:Optional[bool]=None
+class PartyPatch(BaseModel):name:Optional[str]=None;playlist_id:Optional[int]=None;allowed_devices:Optional[list[str]]=None;default_tv:Optional[str]=None;request_limit:Optional[int]=None;repeat_window:Optional[int]=None;queue_locked:Optional[bool]=None;upvote_sort:Optional[bool]=None;playlist_enabled:Optional[bool]=None;sync_mode:Optional[bool]=None
 class PlaylistCreate(BaseModel):name:str
 class PlaylistRename(BaseModel):name:str
 class PlaylistClone(BaseModel):name:str
@@ -73,8 +73,8 @@ class PartyCreate(BaseModel):
  request_limit:Optional[int]=None
  repeat_window:Optional[int]=None
  upvote_sort:Optional[bool]=None
- detect_external_skip:Optional[bool]=None
  playlist_enabled:Optional[bool]=None
+ sync_mode:Optional[bool]=None
 def au(x):
  if not secrets.compare_digest(x or'',settings.admin_password):raise HTTPException(401,'Nicht autorisiert')
 def party():
@@ -85,6 +85,11 @@ def tvok(x,p):
  if x not in allow(p):raise HTTPException(403,'Abspieler nicht freigegeben')
  return x
 def pub(p):return {**p,'allowed_devices':[x for x in devices() if x['id'] in allow(p)]}
+def validate_sync_config(sync_mode,device_ids,lead):
+ if not sync_mode:return
+ if lead not in device_ids:raise HTTPException(400,'Der Lead-TV muss für die Party freigegeben sein')
+ invalid=[tv_id for tv_id in device_ids if not get_tv(tv_id) or get_tv(tv_id).get('connection_mode')!='adb']
+ if invalid:raise HTTPException(400,'Multi-TV-Sync unterstützt nur direkte ADB-Geräte: '+', '.join(invalid))
 async def state():
  p=party()
  with conn() as c:
@@ -148,12 +153,51 @@ async def send_play_adb(x,tv,attempt):
  except Exception as e:
   debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error=repr(e));return False
 
-async def send_play_command(x,attempt):
- tv=get_tv(x['target_tv'])
+async def send_play_command_to_tv(x,tv_id,attempt):
+ tv=get_tv(tv_id)
  if not tv:
-  debug_event('PLAY_TRANSPORT_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='TV nicht gefunden');return False
- return await send_play_adb(x,tv,attempt) if tv.get('connection_mode')=='adb' else await send_play_ha(x,attempt)
+  debug_event('PLAY_TRANSPORT_ERROR',tv_id,queue_id=x.get('id'),attempt=attempt,error='TV nicht gefunden');return False
+ payload={**x,'target_tv':tv_id}
+ return await send_play_adb(payload,tv,attempt) if tv.get('connection_mode')=='adb' else await send_play_ha(payload,attempt)
+async def send_play_command(x,attempt):
+ p=party();targets=[x['target_tv']]
+ if p and p.get('sync_mode'):
+  targets=[d['id'] for d in pub(p)['allowed_devices']]
+ debug_event('SYNC_PLAY_DISPATCH' if len(targets)>1 else 'PLAY_TARGETS',x['target_tv'],targets=targets,queue_id=x.get('id'),attempt=attempt)
+ results=await asyncio.gather(*(send_play_command_to_tv(x,tv_id,attempt) for tv_id in targets),return_exceptions=True)
+ return any(r is True for r in results)
 
+async def adb_media_key(tv_id,keycode,reason):
+ tv=get_tv(tv_id);target=adb_target(tv.get('ip_address')) if tv else None
+ if not target or tv.get('connection_mode')!='adb':return False
+ try:
+  code,out=await run_adb('-s',target,'shell','input','keyevent',str(keycode),timeout=5)
+  ok=code==0;debug_event('SYNC_MEDIA_COMMAND',tv_id,keycode=keycode,reason=reason,ok=ok,output=out);return ok
+ except Exception as e:debug_event('SYNC_MEDIA_COMMAND_ERROR',tv_id,keycode=keycode,reason=reason,error=repr(e));return False
+async def sync_followers():
+ p=party()
+ if not p or not p.get('sync_mode'):sync_hold.clear();sync_last_state.clear();return
+ lead=p['default_tv'];lead_state=pb.get(lead)
+ if not lead_state:return
+ followers=[d['id'] for d in pub(p)['allowed_devices'] if d['id']!=lead]
+ state=lead_state.get('state');previous=sync_last_state.get(lead)
+ if state!=previous and state in ('playing','paused','idle'):
+  key=126 if state=='playing' else 127
+  if state!='idle':await asyncio.gather(*(adb_media_key(tv,key,f'lead_{state}') for tv in followers))
+  sync_last_state[lead]=state;debug_event('SYNC_LEAD_STATE',lead,state=state,previous=previous,followers=followers)
+ if state!='playing':return
+ lead_pos=float(lead_state.get('media_position') or 0)
+ for follower in followers:
+  fp=pb.get(follower)
+  if not fp or fp.get('state') not in ('playing','paused'):continue
+  follower_pos=float(fp.get('media_position') or 0);drift=follower_pos-lead_pos
+  if sync_hold.get(follower):
+   if drift<=settings.sync_resume_margin:
+    await adb_media_key(follower,126,'drift_resume');sync_hold.pop(follower,None);debug_event('SYNC_DRIFT_CORRECTED',follower,lead=lead,drift=round(drift,3))
+  elif drift>settings.sync_drift_tolerance:
+   await adb_media_key(follower,127,'drift_ahead');sync_hold[follower]=True;debug_event('SYNC_DRIFT_HOLD',follower,lead=lead,drift=round(drift,3),tolerance=settings.sync_drift_tolerance)
+  elif drift < -settings.sync_drift_tolerance:
+   debug_event('SYNC_DRIFT_BEHIND',follower,lead=lead,drift=round(drift,3),tolerance=settings.sync_drift_tolerance)
 async def play_watchdog(tv,queue_id,x):
  try:
   debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout)
@@ -253,6 +297,7 @@ async def adb_monitor_loop():
   while True:
    tvs=[tv for tv in list_tvs(True) if tv.get('connection_mode')=='adb' and tv.get('ip_address')]
    if tvs:await asyncio.gather(*(poll_adb_tv(tv) for tv in tvs))
+   await sync_followers()
    await asyncio.sleep(max(0.5,settings.adb_poll_interval))
  except asyncio.CancelledError:debug_event('ADB_MONITOR_STOPPED')
 
@@ -267,14 +312,14 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-beta2',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
+app=FastAPI(version='3.1.0',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
 BANNERS.mkdir(parents=True,exist_ok=True);app.mount("/banners",StaticFiles(directory=BANNERS),name="banners");app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.0.0-beta2'}
+async def health():return {'ok':True,'version':'3.1.0'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -290,7 +335,7 @@ async def add(b:Add):
  if not b.requested_by or b.requested_by.lower()=='gast':raise HTTPException(400,'Bitte zuerst einen Namen angeben')
  p=party()
  if p['queue_locked']:raise HTTPException(423,'Musikwünsche sind gesperrt')
- tv=tvok(b.target_tv,p);d=await metadata(b.video_id,b.url)
+ tv=p['default_tv'] if p.get('sync_mode') else tvok(b.target_tv,p);d=await metadata(b.video_id,b.url)
  with conn() as c:
   if c.execute("SELECT 1 FROM queue WHERE party_id=? AND target_tv=? AND video_id=? AND status IN ('queued','playing')",(p['id'],tv,d['video_id'])).fetchone():raise HTTPException(409,'Titel bereits eingeplant')
   if p['repeat_window'] and c.execute("SELECT 1 FROM (SELECT video_id FROM queue WHERE party_id=? AND target_tv=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT ?) WHERE video_id=?",(p['id'],tv,p['repeat_window'],d['video_id'])).fetchone():raise HTTPException(409,'Titel lief vor Kurzem bereits')
@@ -455,6 +500,7 @@ async def queue_delete(qid:int,x_admin_password:str=Header(default='')):
 @app.patch('/api/admin/party')
 async def patch(b:PartyPatch,x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party();d=b.model_dump(exclude_none=True)
+ ids=d.get('allowed_devices',allow(p));lead=d.get('default_tv',p['default_tv']);sync=d.get('sync_mode',bool(p.get('sync_mode')));validate_sync_config(sync,ids,lead)
  if 'allowed_devices'in d:d['allowed_devices']=','.join(d['allowed_devices'])
  with conn() as c:
   for k,v in d.items():c.execute(f'UPDATE parties SET {k}=? WHERE id=?',(int(v) if isinstance(v,bool) else v,p['id']))
@@ -523,14 +569,15 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
  with conn() as c:
   if current:close_party(c,current)
   if b.clone_current:
-   values={k:current[k] for k in ('playlist_id','allowed_devices','default_tv','request_limit','repeat_window','upvote_sort','detect_external_skip','playlist_enabled')}
+   values={k:current[k] for k in ('playlist_id','allowed_devices','default_tv','request_limit','repeat_window','upvote_sort','playlist_enabled','sync_mode')};values['detect_external_skip']=1
   else:
    available=devices()
    if not available:raise HTTPException(409,'Bitte zuerst mindestens einen aktiven TV anlegen')
    allowed=b.allowed_devices or [x['id'] for x in available]
    selected_default=b.default_tv or default_tv()
-   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':selected_default,'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':0 if b.detect_external_skip is None else int(b.detect_external_skip),'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled)}
-  r=c.execute("INSERT INTO parties(name,playlist_id,allowed_devices,default_tv,request_limit,repeat_window,queue_locked,upvote_sort,detect_external_skip,playlist_enabled,active,started_at,ended_at) VALUES(?,?,?,?,?,?,0,?,?,?,?,CURRENT_TIMESTAMP,NULL)",(name,values['playlist_id'],values['allowed_devices'],values['default_tv'],values['request_limit'],values['repeat_window'],values['upvote_sort'],values['detect_external_skip'],values['playlist_enabled'],1))
+   values={'playlist_id':b.playlist_id or 1,'allowed_devices':','.join(allowed),'default_tv':selected_default,'request_limit':settings.max_requests_per_guest if b.request_limit is None else b.request_limit,'repeat_window':settings.base_playlist_recent_exclude if b.repeat_window is None else b.repeat_window,'upvote_sort':1 if b.upvote_sort is None else int(b.upvote_sort),'detect_external_skip':1,'playlist_enabled':1 if b.playlist_enabled is None else int(b.playlist_enabled),'sync_mode':0 if b.sync_mode is None else int(b.sync_mode)}
+  validate_sync_config(bool(values['sync_mode']),values['allowed_devices'].split(','),values['default_tv'])
+  r=c.execute("INSERT INTO parties(name,playlist_id,allowed_devices,default_tv,request_limit,repeat_window,queue_locked,upvote_sort,detect_external_skip,playlist_enabled,sync_mode,active,started_at,ended_at) VALUES(?,?,?,?,?,?,0,?,?,?,?,?,CURRENT_TIMESTAMP,NULL)",(name,values['playlist_id'],values['allowed_devices'],values['default_tv'],values['request_limit'],values['repeat_window'],values['upvote_sort'],values['detect_external_skip'],values['playlist_enabled'],values['sync_mode'],1))
  pb.clear();guard.clear()
  for item in play_pending.values():
   if item.get('task') and not item['task'].done():item['task'].cancel()
@@ -541,6 +588,8 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
 async def process_progress(b:Progress,source='home_assistant'):
  p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_state=old.get('state');old_pos=float(old.get('media_position',0) or 0);new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
  pb[tv]={'state':b.state,'media_position':new_pos,'app_id':b.app_id,'received':now,'source':source}
+ if p.get('sync_mode') and tv!=p['default_tv']:
+  debug_event('SYNC_FOLLOWER_PROGRESS',tv,lead=p['default_tv'],state=b.state,position=round(new_pos,3),drift=round(new_pos-float(pb.get(p['default_tv'],{}).get('media_position',new_pos) or new_pos),3));await cast();return {'ok':True,'follower':True}
  pending=play_pending.get(tv)
  if pending and b.state in ('playing','buffering') and b.app_id==settings.smarttube_package:
   if new_pos<=settings.play_confirm_max_position:
@@ -552,12 +601,12 @@ async def process_progress(b:Progress,source='home_assistant'):
  duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None
  valid_app=b.app_id==settings.smarttube_package;active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
  end_match=bool(r and valid_app and active_state and duration and (new_pos>=end_threshold or (duration - new_pos)<=1.0))
- reset_match=bool(r and valid_app and active_state and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
+ reset_match=bool(r and valid_app and active_state and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
  idle_end=bool(r and b.state=='idle' and (old_pos>=end_threshold or (duration - old_pos)<=1.0)) if end_threshold is not None else False
- idle_skip=bool(r and b.state=='idle' and p['detect_external_skip'] and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
- debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=bool(p['detect_external_skip']),guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
+ idle_skip=bool(r and b.state=='idle' and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
+ debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=True,guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
  if r and valid_app and active_state:
-  debug_event('DECISION',tv,end_match=end_match,skip_match=reset_match,skip_enabled=bool(p['detect_external_skip']),state=b.state,old_state=old_state,old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(end_threshold,3) if end_threshold is not None else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
+  debug_event('DECISION',tv,end_match=end_match,skip_match=reset_match,skip_enabled=True,state=b.state,old_state=old_state,old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(end_threshold,3) if end_threshold is not None else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
   if end_match:
    guard[tv]=time.monotonic()+settings.prestart_idle_guard;debug_event('END_DETECTED',tv,position=round(new_pos,3),duration=r['duration_seconds'],state=b.state,new_guard_seconds=settings.prestart_idle_guard);await done(tv,'played','duration_threshold');return {'ok':True}
   if reset_match:
@@ -591,7 +640,7 @@ async def progress(b:Progress,x_admin_password:str=Header(default='')):
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.0.0-beta2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'3.1.0','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
@@ -733,7 +782,7 @@ def recap_html(p,rows):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '–';source='Wunsch' if r['source']=='request' else 'Grundplaylist';status='übersprungen' if r['status']=='skipped' else 'gespielt';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist'
   tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>🔥 {int(r.get('hypes') or 0)}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
  ranking=''.join(f'<li><span>{safe(n)}</span><strong>{v}</strong></li>' for n,v in sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10]) or '<li><span>Keine Wünsche</span><strong>0</strong></li>'
- return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V2.7</footer></main></body></html>"""
+ return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V3.1.0</footer></main></body></html>"""
 
 def recap_pdf(p,rows):
  out=io.BytesIO();doc=SimpleDocTemplate(out,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=15*mm,bottomMargin=15*mm,title=f"{p['name']} - Party Recap",author='SmartTube PartyQueue')
@@ -753,7 +802,7 @@ def recap_pdf(p,rows):
  for i,r in enumerate(rows,1):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status} - Hype {int(r.get('hypes') or 0)}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
  tt=Table(tracks,colWidths=[10*mm,16*mm,81*mm,37*mm,16*mm],repeatRows=1);tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(0,0),(1,-1),'CENTER'),('ALIGN',(4,0),(4,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]));story.append(tt)
- def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V2.8.0');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
+ def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V3.1.0');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
  doc.build(story,onFirstPage=footer,onLaterPages=footer);out.seek(0);return out
 
 @app.get('/api/party/{pid}/export/{fmt}')

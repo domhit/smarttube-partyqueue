@@ -1,46 +1,49 @@
 # Architektur
 
-## V2.8.3
+## Übersicht
 
 ```text
-Browser
-  ├── Gastoberflaeche
-  └── Hostoberflaeche
-          |
-          v
-FastAPI-Anwendung
-  ├── REST API
-  ├── WebSocket State Broadcast
-  ├── Playback Engine
-  ├── Party-/Playlist-Logik
-  ├── Exporte
-  └── SQLite
-          |
-          v
-Home Assistant
-  ├── Webhook fuer SmartTube-Starts
-  ├── ADB-Service
-  └── MediaSession-Automation
-          |
-          v
+Gast- und Host-Browser
+        |
+        v
+SmartTube PartyQueue
+FastAPI + REST + WebSocket
+        |
+        +-- SQLite: Partys, Queue, Playlists, Geräte, Einstellungen
+        +-- ADB: Wiedergabestart, Pairing, MediaSession-Abfrage
+        +-- Export: HTML, PDF, CSV, JSON, M3U
+        |
+        v
 Android TV / Fire TV / SmartTube
 ```
 
+Home Assistant ist optional und kann je TV anstelle des direkten ADB-Transports verwendet werden.
+
+## Komponenten
+
+- **FastAPI:** REST-Endpunkte, WebSocket, statische Weboberflächen und Exporte
+- **SQLite:** persistente Anwendungsdaten unter `/app/data/partyqueue.db`
+- **ADB:** Gerätekopplung, Verbindung, SmartTube-Start und MediaSession-Auswertung
+- **Gastoberfläche:** Suche, URL-Import, Upvotes, Hypes und Wiedergabestatus
+- **Hostoberfläche:** Party-, Playlist-, TV-, Einstellungs-, Archiv- und Debugverwaltung
+
 ## Persistenz
 
-SQLite speichert unter anderem:
+`/app/data` enthält:
 
-- Partys
-- Queue und Verlauf
-- Playlists und Playlist-Eintraege
-- Upvotes
-- Hype-Votes
-- Basisplaylist-Historie
-- YouTube-Kontingentdaten
+- SQLite-Datenbank
+- hochgeladene Partybanner unter `/app/data/banners`
 
-## Playback State Machine
+`/root/.android` enthält:
 
-Wichtige Zustaende:
+- `adbkey`
+- `adbkey.pub`
+
+Beide Pfade müssen als persistente Volumes eingebunden werden.
+
+## Playback-Zustände
+
+Queue-Einträge verwenden:
 
 - `queued`
 - `playing`
@@ -50,33 +53,26 @@ Wichtige Zustaende:
 
 Wichtige Mechanismen:
 
-- Vorzeitige Ende-Erkennung
+- Start-Guard gegen Übergangs-Idle
+- Bestätigung des Wiedergabestarts
+- einmaliger automatischer Retry
+- Ende-Erkennung über Dauer und Position
 - Idle-Fallback
-- Externe Skip-Erkennung
-- Start-Guard
-- Playback-Watchdog
-- Einmaliger Retry
+- externe Skip-Erkennung
+- getrennte Zustände je Ziel-TV
 
-## Zielarchitektur V3.0
+## Transportmodi
 
-```text
-Browser
-  |
-  v
-PartyQueue Standalone
-  ├── WebUI
-  ├── SQLite
-  ├── direkte ADB-Verbindungen
-  ├── MediaSession-Auswertung
-  ├── TV-Verwaltung
-  ├── Playback Engine
-  └── REST/WebSocket API
-          |
-          v
-Android TV / Fire TV / SmartTube
+### Direktes ADB
 
-Optional:
-Home Assistant -> PartyQueue API fuer Dashboard und Automationen
-```
+PartyQueue verbindet sich mit dem Zielgerät, startet SmartTube per Android-Intent und liest den Wiedergabestatus aus `dumpsys media_session`.
 
-Ziel ist die Umkehr der Abhaengigkeit: PartyQueue soll ohne Home Assistant laufen; Home Assistant darf PartyQueue optional konsumieren.
+### Home Assistant
+
+PartyQueue sendet den Start über einen Webhook. Home Assistant meldet Wiedergabestatus und Position an `/api/playback/progress`. Dieser Modus bleibt für bestehende Installationen und Sonderfälle verfügbar.
+
+## Multi-TV-Sync
+
+Der Standard-TV ist der Lead. Nur seine MediaSession löst Queue-Übergänge, Skip- und Ende-Erkennung aus. Follower liefern weiterhin Telemetrie, dürfen aber keine Queue-Entscheidung treffen. Startbefehle werden parallel an alle freigegebenen Geräte gesendet. Pause und Fortsetzen werden über Android-Keyevents 127 und 126 gespiegelt.
+
+Drift-Korrektur ist absichtlich konservativ: vorauslaufende Follower werden angehalten, bis der Lead aufgeholt hat. Zurückliegende Follower werden protokolliert, damit ein fehlerhafter Pufferzustand sichtbar bleibt, ohne den Audiopfad des Lead-TVs zu unterbrechen.

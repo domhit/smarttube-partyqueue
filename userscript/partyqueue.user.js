@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube -> SmartTube PartyQueue
 // @namespace    smarttube-partyqueue
-// @version      2.8.2
+// @version      3.1.0
 // @description  Fügt YouTube-Videos und Suchergebnisse zur SmartTube PartyQueue hinzu
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -88,7 +88,7 @@
       if (party.queue_locked) throw new Error('Musikwünsche sind derzeit gesperrt');
       const devices = party.allowed_devices || [];
       if (!devices.length) throw new Error('Für diese Party ist kein Abspieler freigegeben');
-      if (devices.length === 1) return enqueue(videoUrl, devices[0].id);
+      if (party.sync_mode || devices.length === 1) return enqueue(videoUrl, party.default_tv || devices[0].id);
 
       closeDialog();
       const overlay = document.createElement('div');

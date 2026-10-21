@@ -1,37 +1,28 @@
-# Home-Assistant-Integration fuer V2.x
+# Optionale Home-Assistant-Integration
 
-In den V2.x-Releases ist Home Assistant der Transportlayer zwischen PartyQueue und SmartTube.
+SmartTube PartyQueue V3 benötigt Home Assistant nicht. Direkte ADB-Geräte werden vollständig durch PartyQueue gesteuert und überwacht.
 
-## Datenfluss
+Home Assistant kann weiterhin als alternativer Transport für einzelne TVs verwendet werden.
+
+## Datenfluss im HA-Modus
 
 ```text
 PartyQueue -> Home-Assistant-Webhook -> androidtv.adb_command -> SmartTube
 SmartTube MediaSession -> Home-Assistant-Automation -> PartyQueue Progress API
 ```
 
-## Mitgelieferte Dateien
+## Einrichtung
 
-```text
-home-assistant/
-├── automation.yaml
-├── playback-progress.yaml
-├── rest-command.yaml
-└── video-ended-example.yaml
-```
-
-Die Dateien sind Vorlagen und muessen an die eigenen Entity-IDs, TV-IDs, Netzwerkadressen und SmartTube-Paketnamen angepasst werden.
-
-## 1. Admin-Passwort in secrets.yaml
+1. In PartyQueue unter **TVs** ein Gerät mit Modus **Home Assistant** anlegen.
+2. Die interne TV-ID muss der Trigger-ID der Automation entsprechen.
+3. `ha_url` und `ha_webhook_id` unter **Host → Einstellungen** konfigurieren.
+4. Das Admin-Passwort in Home Assistant als Secret hinterlegen.
 
 ```yaml
 partyqueue_admin_password: DEIN_SICHERES_PASSWORT
 ```
 
-Der Wert muss mit `ADMIN_PASSWORD` in der PartyQueue `.env` uebereinstimmen.
-
-## 2. REST-Command
-
-Aus `home-assistant/rest-command.yaml` uebernehmen und anpassen:
+## Progress-REST-Command
 
 ```yaml
 rest_command:
@@ -46,57 +37,11 @@ rest_command:
       "media_position":{{ media_position|float(0) }},"app_id":"{{ app_id }}"}
 ```
 
-## 3. Playback-Fortschritt
+Vorlagen liegen unter `home-assistant/` und müssen an die eigenen Entity-IDs und Netzwerkadressen angepasst werden.
 
-`home-assistant/playback-progress.yaml` sendet bei Aenderungen der Media-Player-Entitaeten:
+## Funktionstest
 
-- `playing`
-- `paused`
-- `idle`
-- `media_position`
-- `app_id`
-
-Die Trigger-IDs müssen den in der PartyQueue-WebUI angelegten TV-IDs entsprechen.
-
-Beispiel:
-
-```yaml
-triggers:
-  - trigger: state
-    entity_id: media_player.mein_android_tv
-    id: wohnzimmer
-```
-
-Dazu passend wird in der PartyQueue-WebUI ein TV mit der internen ID `wohnzimmer` und dem Modus `Home Assistant` angelegt.
-
-## 4. SmartTube-Startautomation
-
-`home-assistant/automation.yaml` stellt den Webhook `smarttube_partyqueue_play` bereit und fuehrt je Ziel-TV einen ADB-Befehl aus:
-
-```text
-am start -a android.intent.action.VIEW \
-  -d "https://www.youtube.com/watch?v=VIDEO_ID" \
-  org.smarttube.stable
-```
-
-Die Webhook-ID muss mit `HA_WEBHOOK_ID` uebereinstimmen.
-
-## 5. Home Assistant neu laden
-
-Nach dem Einbau:
-
-1. YAML-Konfiguration pruefen.
-2. Automationen neu laden oder Home Assistant neu starten.
-3. PartyQueue-Container neu starten.
-4. Host- und Gastseite per Hard-Reload aktualisieren.
-
-## 6. Funktionstest
-
-1. Im PartyQueue-Host einen TV auswaehlen.
-2. `Start` auswaehlen.
-3. Pruefen, ob SmartTube den Titel oeffnet.
-4. Debug-Tab beobachten.
-5. Erwartete Ereignisse:
+Im Debug-Tab werden bei erfolgreichem Start typischerweise folgende Ereignisse sichtbar:
 
 ```text
 PLAY_DISPATCHED
@@ -106,8 +51,4 @@ PLAY_CONFIRM_WAIT
 PLAY_CONFIRMED
 ```
 
-Wenn keine Bestaetigung kommt, wird einmal `PLAY_RETRY` ausgeloest.
-
-## Sicherheit
-
-Der mitgelieferte Webhook verwendet `local_only: true`. Die Hostoberflaeche sollte trotzdem nicht ungeschuetzt oeffentlich bereitgestellt werden.
+Bei einem ADB-Gerät werden Fortschrittsmeldungen aus Home Assistant bewusst ignoriert, damit nicht zwei Statusquellen gegeneinander arbeiten.
