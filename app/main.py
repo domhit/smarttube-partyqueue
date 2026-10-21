@@ -268,7 +268,7 @@ async def life(app):
    except asyncio.CancelledError:pass
 
 app=FastAPI(version='3.0.0-beta2',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
-BANNERS.mkdir(parents=True,exist_ok=True);app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+BANNERS.mkdir(parents=True,exist_ok=True);app.mount("/banners",StaticFiles(directory=BANNERS),name="banners");app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
