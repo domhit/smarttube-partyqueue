@@ -5,7 +5,7 @@ Die GitHub-Actions-Workflowdatei `.github/workflows/ghcr.yml` baut und veröffen
 ### Veröffentlichte Tags
 
 - Push auf `develop`: `develop` und `sha-<commit>`
-- Git-Tag `v3.0.0-beta2`: `v3.0.0-beta2`, `3.0.0-beta2` und `sha-<commit>`
+- Git-Tag `v3.0.0-beta3`: `v3.0.0-beta3`, `3.0.0-beta3` und `sha-<commit>`
 - Stabile Tags wie `v3.0.0`: zusätzlich `3.0` und gemäß Docker Metadata Action `latest`
 
 Das Image wird für `linux/amd64` und `linux/arm64` gebaut.
@@ -25,8 +25,8 @@ Es ist kein persönlicher Zugriffstoken für die Veröffentlichung aus GitHub Ac
 `GITHUB-OWNER` durch den kleingeschriebenen GitHub-Benutzer- oder Organisationsnamen ersetzen:
 
 ```bash
-docker pull ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta2
-docker run --rm ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta2 python -c "import app.main; print(app.main.app.version)"
+docker pull ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta3
+docker run --rm ghcr.io/GITHUB-OWNER/smarttube-partyqueue:3.0.0-beta3 python -c "import app.main; print(app.main.app.version)"
 ```
 
 ### Betrieb mit Docker Compose

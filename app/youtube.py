@@ -29,16 +29,19 @@ async def details(ids):
     s=z['snippet'];t=s.get('thumbnails',{});out.append({'video_id':z['id'],'title':s['title'],'channel':s['channelTitle'],'thumbnail':t.get('medium',t.get('default',{})).get('url',''),'duration_seconds':dur(z.get('contentDetails',{}).get('duration')),'is_live':s.get('liveBroadcastContent') in ('live','upcoming'),'embeddable':z.get('status',{}).get('embeddable',True)})
  return out
 async def search(q):
- n=' '.join(q.lower().split());cut=datetime.now(timezone.utc)-timedelta(hours=settings.search_cache_hours)
+ n=' '.join(q.lower().split())
+ if len(n)<settings.search_min_length:raise ValueError(f'Suche muss mindestens {settings.search_min_length} Zeichen lang sein')
+ limit=max(1,min(50,int(settings.search_results)))
+ cut=datetime.now(timezone.utc)-timedelta(hours=settings.search_cache_hours)
  with conn() as c:r=c.execute('SELECT * FROM search_cache WHERE query=?',(n,)).fetchone()
- if r and datetime.fromisoformat(r['created_at'].replace(' ','T')).replace(tzinfo=timezone.utc)>=cut:bump('search_cache_hits');return json.loads(r['payload'])
+ if r and datetime.fromisoformat(r['created_at'].replace(' ','T')).replace(tzinfo=timezone.utc)>=cut:bump('search_cache_hits');return json.loads(r['payload'])[:limit]
  if quota()['search_api_calls']>=settings.youtube_search_hard_stop_at:raise RuntimeError('Lokales YouTube-Suchlimit erreicht')
  bump('search_api_calls')
  try:
-  async with httpx.AsyncClient(timeout=20) as c:r=await c.get('https://www.googleapis.com/youtube/v3/search',params={'key':settings.youtube_api_key,'part':'snippet','type':'video','maxResults':50,'q':q,'safeSearch':'moderate','videoEmbeddable':'true'});r.raise_for_status()
+  async with httpx.AsyncClient(timeout=20) as c:r=await c.get('https://www.googleapis.com/youtube/v3/search',params={'key':settings.youtube_api_key,'part':'snippet','type':'video','maxResults':limit,'q':q,'safeSearch':'moderate','videoEmbeddable':'true'});r.raise_for_status()
   a=await details([x['id']['videoId'] for x in r.json().get('items',[]) if x.get('id',{}).get('videoId')]);a=[x for x in a if not x['is_live'] and x['embeddable'] and 0<x['duration_seconds']<=settings.max_video_minutes*60]
   with conn() as c:c.execute('INSERT INTO search_cache VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(query) DO UPDATE SET payload=excluded.payload,created_at=CURRENT_TIMESTAMP',(n,json.dumps(a)))
-  return a
+  return a[:limit]
  except:bump('search_failures');raise
 async def playlist(x):
  pid=playlist_id(x)

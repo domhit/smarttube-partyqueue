@@ -6,6 +6,22 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 
 ## [Unreleased]
 
+## [3.0.0-beta3] - 2026-10-21
+
+### Added
+- Mobile-First Gastoberfläche mit großen Touchflächen und Ergebnis-Karten.
+- Optionaler Partybanner-Upload für JPG, PNG und WebP bis 5 MB.
+- Banner-Vorschau und Löschfunktion in der Hostoberfläche.
+- Enter-Unterstützung für Gastsuche und YouTube-Link.
+
+### Changed
+- Externe SmartTube-Skip-Erkennung ist dauerhaft aktiv.
+- Suchergebnisanzahl wird sofort aus den SQLite-Einstellungen übernommen.
+
+### Fixed
+- Cached Suchergebnisse werden auf die aktuell konfigurierte Ergebnisanzahl begrenzt.
+- Mindestlänge für Suchbegriffe wird serverseitig geprüft.
+
 ### Changed
 
 - `.env.example` auf `ADMIN_PASSWORD` und `DATA_DIR` als reine Bootstrap-Konfiguration reduziert.

@@ -2,7 +2,7 @@
 
 SmartTube PartyQueue ist eine webbasierte Musik-Wunschliste fuer Partys mit SmartTube auf Android TV und Fire TV. Gaeste reichen ueber eine mobilfreundliche Weboberflaeche Musikwünsche ein, bewerten offene Titel und geben dem aktuell laufenden Song einen Hype. Der Host verwaltet Partys, Warteschlangen, Playlists, Abspieler, Exporte und die Playback-Diagnose ueber eine separate Administrationsoberflaeche.
 
-> **Entwicklungsstand:** V3.0.0-beta1 auf `develop`  
+> **Entwicklungsstand:** V3.0.0-beta3 auf `develop`
 > **Stabiler Release:** V2.8.3 auf `main`
 > **Status:** Auf mehreren echten Partys produktiv getestet  
 > **Aktuelle Architektur:** Docker + SQLite + direktes ADB/Android TV; Home Assistant optional  
@@ -10,7 +10,7 @@ SmartTube PartyQueue ist eine webbasierte Musik-Wunschliste fuer Partys mit Smar
 > 
 ### Beta-Status
 
-V3.0.0-beta2 erweitert die Standalone-Architektur um den TV-Editor und ADB-Pairing direkt in der WebUI.
+V3.0.0-beta3 erweitert die Standalone-Architektur um den TV-Editor und ADB-Pairing direkt in der WebUI.
 
 Die Wiedergabesteuerung und die MediaSession-Auswertung können direkt über ADB erfolgen. Für diese Geräte ist Home Assistant nicht mehr erforderlich.
 
@@ -69,7 +69,9 @@ Vor dem Veroeffentlichen sollten Domains, IP-Adressen, API-Schluessel, Passwoert
 
 ### Gastoberflaeche
 
-- Mobilfreundliche Weboberflaeche
+- Mobile-First Gastoberfläche mit großen Touchflächen und Suchergebnis-Karten
+- Enter startet Suche und URL-Import
+- Optionaler Partybanner auf der Gastseite
 - Namenspflicht vor dem ersten Musikwunsch
 - YouTube-Suche ueber die YouTube Data API v3
 - Hinzufuegen per YouTube-URL
@@ -253,7 +255,7 @@ Erwartete Antwort:
 ```json
 {
   "ok": true,
-  "version": "3.0.0-beta2"
+  "version": "3.0.0-beta3"
 }
 ```
 

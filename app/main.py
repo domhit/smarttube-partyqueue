@@ -392,6 +392,28 @@ async def admin_adb_connect(b:AdbPairRequest,x_admin_password:str=Header(default
  debug_event('ADB_CONNECT',host=target,ok=ok,output=out)
  if not ok:raise HTTPException(409,out or 'ADB-Verbindung fehlgeschlagen')
  return {'ok':True,'host':target,'output':out}
+@app.post('/api/admin/party/banner')
+async def party_banner_upload(banner:UploadFile=File(...),x_admin_password:str=Header(default='')):
+ au(x_admin_password);p=party()
+ if not p:raise HTTPException(409,'Es läuft keine Party')
+ ext={'.jpg':'.jpg','.jpeg':'.jpg','.png':'.png','.webp':'.webp'}.get(Path(banner.filename or '').suffix.lower())
+ if not ext or banner.content_type not in {'image/jpeg','image/png','image/webp'}:raise HTTPException(400,'Erlaubt sind JPG, PNG und WebP')
+ data=await banner.read(5*1024*1024+1)
+ if len(data)>5*1024*1024:raise HTTPException(413,'Banner darf maximal 5 MB groß sein')
+ if not data:raise HTTPException(400,'Bannerdatei ist leer')
+ name=f'party_{p["id"]}{ext}';target=BANNERS/name
+ for candidate in BANNERS.glob(f'party_{p["id"]}.*'):
+  if candidate!=target:candidate.unlink(missing_ok=True)
+ target.write_bytes(data)
+ with conn() as c:c.execute('UPDATE parties SET banner_path=? WHERE id=?',(f'/banners/{name}',p['id']))
+ await cast();return {'ok':True,'banner_path':f'/banners/{name}'}
+@app.delete('/api/admin/party/banner')
+async def party_banner_delete(x_admin_password:str=Header(default='')):
+ au(x_admin_password);p=party()
+ if not p:raise HTTPException(409,'Es läuft keine Party')
+ for candidate in BANNERS.glob(f'party_{p["id"]}.*'):candidate.unlink(missing_ok=True)
+ with conn() as c:c.execute("UPDATE parties SET banner_path='' WHERE id=?",(p['id'],))
+ await cast();return {'ok':True}
 @app.get('/api/admin/settings')
 async def admin_settings(x_admin_password:str=Header(default='')):au(x_admin_password);return all_settings()
 @app.patch('/api/admin/settings')

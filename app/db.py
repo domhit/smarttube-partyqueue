@@ -31,6 +31,8 @@ def init_db():
   for n,t,d in [('guest_id','TEXT',"''"),('party_id','INTEGER','NULL'),('playlist_id','INTEGER','NULL'),('votes','INTEGER','0'),('admin_priority','INTEGER','0')]:
    if not col(c,'queue',n):c.execute(f'ALTER TABLE queue ADD COLUMN {n} {t} DEFAULT {d}')
   if not col(c,'parties','playlist_enabled'):c.execute('ALTER TABLE parties ADD COLUMN playlist_enabled INTEGER DEFAULT 1')
+  if not col(c,'parties','banner_path'):c.execute("ALTER TABLE parties ADD COLUMN banner_path TEXT DEFAULT ''")
+  c.execute('UPDATE parties SET detect_external_skip=1 WHERE detect_external_skip=0')
   if not col(c,'tvs','connection_mode'):c.execute("ALTER TABLE tvs ADD COLUMN connection_mode TEXT DEFAULT 'ha'")
   # V2.7 archive migration: keep the newest active party and enforce the invariant.
   c.execute("UPDATE parties SET active=0,ended_at=COALESCE(ended_at,CURRENT_TIMESTAMP) WHERE active=1 AND id<>(SELECT MAX(id) FROM parties WHERE active=1)")
