@@ -1,427 +1,215 @@
 # SmartTube PartyQueue
 
-SmartTube PartyQueue ist eine webbasierte Musik-Wunschliste fuer Partys mit SmartTube auf Android TV und Fire TV. Gaeste reichen ueber eine mobilfreundliche Weboberflaeche Musikwünsche ein, bewerten offene Titel und geben dem aktuell laufenden Song einen Hype. Der Host verwaltet Partys, Warteschlangen, Playlists, Abspieler, Exporte und die Playback-Diagnose ueber eine separate Administrationsoberflaeche.
+SmartTube PartyQueue ist eine eigenständige Musik-Wunschplattform für Partys mit SmartTube auf Android TV und Fire TV. Gäste suchen Titel über eine mobile Weboberfläche, senden Wünsche an einen freigegebenen TV, stimmen über offene Wünsche ab und vergeben Hypes für den laufenden Titel. Der Host verwaltet Partys, Playlists, Geräte, Warteschlangen, Archive, Exporte und die Playback-Diagnose.
 
-> **Entwicklungsstand:** V3.0.0-beta3 auf `develop`
-> **Stabiler Release:** V2.8.3 auf `main`
-> **Status:** Auf mehreren echten Partys produktiv getestet  
-> **Aktuelle Architektur:** Docker + SQLite + direktes ADB/Android TV; Home Assistant optional  
-> **V3-Status:** Direkte ADB-Anbindung, TV-Editor und ADB-Pairing über die WebUI
-> 
-### Beta-Status
+**Aktueller Release:** V3.0.0  
+**Status:** Stable  
+**Architektur:** Docker + FastAPI + SQLite + direktes ADB; Home Assistant optional  
+**Container:** `ghcr.io/domhit/smarttube-partyqueue:3.0.0` oder `:latest`
 
-V3.0.0-beta3 erweitert die Standalone-Architektur um den TV-Editor und ADB-Pairing direkt in der WebUI.
+[Changelog](CHANGELOG.md) · [Konfiguration](docs/configuration.md) · [Architektur](docs/architecture.md) · [Home Assistant](docs/home-assistant.md) · [Fehlerbehebung](docs/troubleshooting.md) · [Sicherheit](SECURITY.md)
 
-Die Wiedergabesteuerung und die MediaSession-Auswertung können direkt über ADB erfolgen. Für diese Geräte ist Home Assistant nicht mehr erforderlich.
+## Highlights von V3.0.0
 
-Bereits umgesetzt:
-
-- Direkte SmartTube-Steuerung über ADB
-- Direkte MediaSession-Auswertung
-- TV-Verwaltung über die WebUI
-- Einstellungen über die WebUI
-- ADB-Verbindungstest
-- SmartTube-Skip-Erkennung
-- SponsorBlock-Erkennung
-- Enderkennung
-- Playback-Watchdog
-- Persistente ADB-Schlüssel
-
-Home Assistant kann weiterhin parallel genutzt werden und bleibt als optionale Integration erhalten.
-
-
-[![Version](https://img.shields.io/badge/version-2.8.3-blue)](CHANGELOG.md)
-[![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-required%20in%20V2.x-41BDF5?logo=homeassistant&logoColor=white)](docs/home-assistant.md)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-## Inhalt
-
-- [Funktionen](#funktionen)
-- [Playback und Fehlerbehandlung](#playback-und-fehlerbehandlung)
-- [Architektur](#architektur-der-v2x-versionen)
-- [Voraussetzungen](#voraussetzungen)
-- [Schnellstart](#schnellstart)
-- [Konfiguration](#konfiguration)
-- [Home Assistant](#home-assistant)
-- [Verwendung](#verwendung)
-- [Updates und Backups](#updates-und-backups)
-- [Diagnose](#diagnose)
-- [Versionshistorie](#versionshistorie)
-- [Roadmap](#roadmap)
-
-## Screenshots
-
-Die folgenden Dateien koennen unter `docs/screenshots/` abgelegt werden:
-
-| Bereich | Vorgesehene Datei |
-|---|---|
-| Host - Party | `docs/screenshots/host-party.png` |
-| Host - Playlist | `docs/screenshots/host-playlist.png` |
-| Gastansicht | `docs/screenshots/guest.png` |
-| Partyarchiv | `docs/screenshots/archive.png` |
-| HTML-Recap | `docs/screenshots/recap-html.png` |
-| PDF-Recap | `docs/screenshots/recap-pdf.png` |
-
-Vor dem Veroeffentlichen sollten Domains, IP-Adressen, API-Schluessel, Passwoerter und unerwuenschte Gastnamen entfernt oder unkenntlich gemacht werden.
-
-## Funktionen
-
-### Gastoberflaeche
-
-- Mobile-First Gastoberfläche mit großen Touchflächen und Suchergebnis-Karten
-- Enter startet Suche und URL-Import
-- Optionaler Partybanner auf der Gastseite
-- Namenspflicht vor dem ersten Musikwunsch
-- YouTube-Suche ueber die YouTube Data API v3
-- Hinzufuegen per YouTube-URL
-- Auswahl des Ziel-TVs
-- Anzeige des laufenden Titels und Wiedergabefortschritts
-- Getrennte Wunschqueue je TV
-- Upvotes fuer offene Wuensche
-- Hype-Button fuer den aktuell laufenden Titel
-- Sperrung neuer Wuensche durch den Host
-
-### Hostoberflaeche
-
-Die Hostoberflaeche ist in vier Tabs gegliedert:
-
-#### Party
-
-- Aktive Party verwalten
-- Grundplaylist, erlaubte TVs und Standard-TV konfigurieren
-- YouTube-API-Kontingent ueberwachen
-- Wiedergabe starten und Titel ueberspringen
-- Queue sortieren, priorisieren und Eintraege entfernen
-
-#### Playlist
-
-- Playlists erstellen, umbenennen, duplizieren und loeschen
-- Einzelne YouTube-Videos hinzufuegen
-- YouTube-Playlists importieren
-- Titel aktivieren und deaktivieren
-- Titel per Drag-and-drop sortieren
-- Titel zwischen Playlists kopieren und verschieben
-- Titel aus dem Verlauf in eine frei waehlbare Playlist uebernehmen
-
-#### Archiv
-
-- Abgeschlossene Partys durchsuchen
-- Titelanzahl, Wuensche, Upvotes und Laufzeit auswerten
-- Top-Wunschgeber, Top-Kuenstler, Top-Vote-Titel und Hype-Titel anzeigen
-- HTML-, PDF-, CSV-, JSON- und M3U-Export
-- Archivierte Partys mit Namensbestaetigung loeschen
-
-#### Debug
-
-- Playback-Zustaende pro TV
-- Wiedergabeposition und App-ID
-- Start-Guard und Idle-Fallback
-- Startbestaetigung und automatischer Retry
-- Strukturierte Diagnoseereignisse
-- JSON-Kopie fuer Fehleranalysen
-
-### Party-Lifecycle
-
-- Neue Party starten
-- Laufende Party abschliessen
-- Party mit ihren Einstellungen klonen
-- Offene Wuensche beim Abschluss als `cancelled` archivieren
-- Queue, Votes und Verlauf nicht in eine neue Party uebernehmen
-- Maximal eine aktive Party gleichzeitig
-- Abgeschlossene Partys unveraendert archivieren
-
-### Multi-TV
-
-- Getrennte Queue und Wiedergabestatus je TV
-- Getrennter Verlauf je TV
-- Gleicher Titel auf unterschiedlichen TVs erlaubt
-- Duplikat- und Wiederholungsschutz pro Ziel-TV
-- Konfigurierbarer Standard-TV
-
-## Playback und Fehlerbehandlung
-
-SmartTube PartyQueue liest MediaSession-Daten bei ADB-Geräten direkt aus. Alternativ kann Home Assistant als Transport verwendet werden. Unterstützt werden:
-
-- Normales Titelende
-- Manuellen Skip in der Hostoberflaeche
-- Externen Skip direkt in SmartTube
-- Pause und Fortsetzen
-- Idle-Fallback
-- SponsorBlock-Spruenge am Videoende
-- Wiedergabestart mit Bestaetigung
-- Einmaligen automatischen Wiederholungsversuch
-- Schutz vor Skip-Kaskaden
-
-### Start-Guard
-
-Nach jedem von PartyQueue ausgeloesten Titelstart werden verspaetete `idle`-Meldungen fuer einen kurzen Zeitraum ignoriert. Dadurch beendet eine SmartTube-Uebergangsmeldung nicht versehentlich den gerade gestarteten Titel.
-
-### Playback-Watchdog
-
-Nach einem Startbefehl wartet PartyQueue auf eine neue `playing`-Meldung. Wenn keine Bestaetigung eintrifft, wird der Startbefehl einmal wiederholt. Der bestehende Queue-Eintrag bleibt aktiv; es wird kein weiterer Titel ausgewaehlt. Ein haengender Home-Assistant-Webhook blockiert den Retry nicht.
-
-## Architektur der V2.x-Versionen
-
-```text
-Gast- und Host-Browser
-        |
-        v
-SmartTube PartyQueue
-FastAPI + SQLite + WebSocket
-        |
-        v
-Home-Assistant-Webhook
-        |
-        v
-Android TV / ADB
-        |
-        v
-SmartTube
-```
-
-### PartyQueue uebernimmt
-
-- Weboberflaechen
-- Partyverwaltung
-- Queue und Playlists
-- Upvotes und Hypes
-- Wiedergabelogik
-- Archiv und Exporte
-- Diagnose und Recovery
-
-### Home Assistant uebernimmt
-
-- SmartTube-Startbefehl auf dem Ziel-TV
-- MediaSession-Wiedergabestatus
-- Uebermittlung von Status, Position und App-ID an PartyQueue
-
-> In V2.x ist Home Assistant erforderlich. Fuer V3.0 ist eine direkte ADB-Anbindung geplant. Home Assistant soll danach als optionale Integration erhalten bleiben.
+- Standalone-Betrieb ohne Home Assistant
+- direkte SmartTube-Steuerung über ADB
+- direkte MediaSession-Auswertung über `dumpsys media_session`
+- TV-Verwaltung, ADB-Pairing und Verbindungstest in der WebUI
+- persistente ADB-Schlüssel über `/root/.android`
+- mobile Gastoberfläche mit Enter-Unterstützung und Ergebnis-Karten
+- optionales Partybanner auf der Gastseite
+- Multi-TV-Queues, Upvotes, Hypes und Grundplaylists
+- Partyarchiv mit HTML-, PDF-, CSV-, JSON- und M3U-Export
+- Playback-Watchdog, Start-Guard, Idle-Fallback und Skip-Erkennung
+- Multi-Arch-Images für `linux/amd64` und `linux/arm64` über GHCR
+- Betrieb mit Docker Compose oder Portainer ohne lokalen Image-Build
 
 ## Voraussetzungen
 
-- Docker Engine oder kompatible Containerumgebung
-- Docker Compose
-- Home Assistant
-- Android-TV-/ADB-Integration in Home Assistant
-- SmartTube auf mindestens einem Zielgeraet
-- YouTube Data API v3 Key
-- Netzwerkverbindung zwischen PartyQueue, Home Assistant und Zielgeraeten
+- Docker Engine, Docker Compose oder Portainer
+- SmartTube auf mindestens einem Android-TV- oder Fire-TV-Gerät
+- ADB-Zugriff auf die Zielgeräte
+- YouTube Data API v3 Key für Suche und Playlist-Import
+- Netzwerkverbindung vom Container zu den Zielgeräten
 
 Optional:
 
-- Portainer
+- Home Assistant als alternativer Transport für einzelne Geräte
 - Reverse Proxy wie Caddy, Traefik oder Nginx Proxy Manager
-- Eigene Domain fuer den Gastzugriff
+- HTTPS und getrennte Zugriffsregeln für Gast- und Hostoberfläche
 
-## Schnellstart
+## Schnellstart mit GHCR
 
-### 1. Repository klonen
+### 1. Arbeitsverzeichnis anlegen
 
 ```bash
-git clone <REPOSITORY-URL>
+mkdir -p smarttube-partyqueue/data smarttube-partyqueue/adb
 cd smarttube-partyqueue
 ```
 
-### 2. Konfiguration anlegen
-
-```bash
-cp .env.example .env
-```
-
-Danach `.env` bearbeiten. Nur `ADMIN_PASSWORD` muss gesetzt werden; `DATA_DIR=/app/data` kann beim Standard-Compose unverändert bleiben. YouTube-, Home-Assistant-, Playback- und TV-Einstellungen erfolgen nach dem Start in der WebUI.
-
-
-### 3. Container bauen und starten
-
-```bash
-docker compose up -d --build
-```
-
-### 4. Logs kontrollieren
-
-```bash
-docker compose logs --tail=100 -f
-```
-
-### 5. Health-Endpunkt pruefen
-
-```bash
-curl http://127.0.0.1:8787/api/health
-```
-
-Erwartete Antwort:
-
-```json
-{
-  "ok": true,
-  "version": "3.0.0-beta3"
-}
-```
-
-## Konfiguration
-
-Die `.env` enthält nur die Bootstrap-Werte. Die vollständige Referenz befindet sich in [docs/configuration.md](docs/configuration.md).
+### 2. `.env` anlegen
 
 ```env
 ADMIN_PASSWORD=change-me
 DATA_DIR=/app/data
 ```
 
-Nach dem Containerstart den YouTube API Key unter **Host → Einstellungen** setzen und TVs unter **Host → TVs** anlegen.
+`ADMIN_PASSWORD` vor dem ersten Start ändern.
 
-## Home Assistant
+### 3. Compose-Datei anlegen
 
-Die vollstaendige Einrichtung ist in [docs/home-assistant.md](docs/home-assistant.md) beschrieben.
-
-Mitgelieferte Vorlagen:
-
-```text
-home-assistant/
-├── automation.yaml
-├── playback-progress.yaml
-├── rest-command.yaml
-└── video-ended-example.yaml
+```yaml
+services:
+  smarttube-partyqueue:
+    image: ghcr.io/domhit/smarttube-partyqueue:3.0.0
+    container_name: smarttube-partyqueue
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8787:8000"
+    volumes:
+      - ./data:/app/data
+      - ./adb:/root/.android
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 ```
 
-Die Home-Assistant Trigger-ID muss exakt der in der PartyQueue-WebUI angelegten TV-ID entsprechen.
+### 4. Starten
 
-## Verwendung
+```bash
+docker compose pull
+docker compose up -d
+```
 
-### Party vorbereiten
+### 5. Einrichten
 
-1. Hostoberflaeche aufrufen und anmelden.
-2. Grundplaylist auswaehlen.
-3. Zielgeraete freigeben und Standard-TV festlegen.
-4. Wunschlimit und Wiederholungsschutz pruefen.
-5. Neue Party starten oder bestehende Einstellungen klonen.
+1. Hostoberfläche öffnen: `http://SERVER-IP:8787/host`
+2. Mit `ADMIN_PASSWORD` anmelden.
+3. Unter **Einstellungen** den YouTube API Key speichern.
+4. Unter **TVs** ein Gerät anlegen.
+5. Für direktes ADB das Gerät koppeln und die Verbindung testen.
+6. Eine Party starten und die Gastseite unter `http://SERVER-IP:8787/` öffnen.
 
-### Waehrend der Party
+Healthcheck:
 
-Gaeste geben ihren Namen ein, waehlen einen TV, suchen einen Titel oder verwenden eine YouTube-URL und fuegen den Wunsch hinzu. Offene Wuensche koennen per Upvote bewertet werden. Der laufende Titel kann einen Hype erhalten.
+```bash
+curl http://127.0.0.1:8787/api/health
+```
 
-Der Host kontrolliert Queue und Wiedergabe. Das Debug-Panel wird nur bei Problemen benoetigt.
+Erwartet:
 
-### Party abschliessen
+```json
+{"ok":true,"version":"3.0.0"}
+```
 
-1. `Party abschliessen` auswaehlen.
-2. Offene Wuensche werden als `cancelled` gespeichert.
-3. Die Party erscheint im Archiv.
-4. HTML-, PDF-, CSV-, JSON- und M3U-Exporte stehen zur Verfuegung.
+## Portainer
+
+In Portainer unter **Stacks → Add stack → Web editor** den Inhalt aus `docker-compose.ghcr.yml` einfügen. Für reproduzierbare Installationen `3.0.0` verwenden. `latest` folgt dem aktuellen stabilen Release.
+
+Persistente Volumes:
+
+- `./data:/app/data`: SQLite-Datenbank und Partybanner
+- `./adb:/root/.android`: private ADB-Schlüssel
+
+Bei einem Update **Pull latest image** aktivieren und den Stack neu deployen. Die beiden Verzeichnisse dürfen dabei nicht gelöscht werden.
+
+## Bedienung
+
+### Gastoberfläche
+
+- Name und Ziel-TV auswählen
+- per Suchbegriff oder YouTube-Link wünschen
+- Suche und URL-Eingabe mit Enter absenden
+- offene Wünsche upvoten
+- laufenden Titel hypen
+- aktuellen Titel und Fortschritt verfolgen
+
+### Hostoberfläche
+
+Die Hostoberfläche umfasst sechs Bereiche:
+
+- **Party:** aktive Party, Grundplaylist, freigegebene TVs, Banner und Queue
+- **Playlist:** Playlists, YouTube-Import, Aktivstatus und Drag-and-drop
+- **Archiv:** abgeschlossene Partys, Rankings und Exporte
+- **TVs:** Geräte, Transportmodus, ADB-Pairing und Verbindungstest
+- **Einstellungen:** YouTube-, Playback-, ADB- und optionale HA-Parameter
+- **Debug:** Playback-Zustände und strukturierte Diagnoseereignisse
+
+## Playback und Fehlerbehandlung
+
+PartyQueue startet SmartTube direkt über ADB oder optional über einen Home-Assistant-Webhook. Bei ADB-Geräten liest PartyQueue Status und Position direkt aus Android MediaSession.
+
+Sicherheitsmechanismen der Playback-Engine:
+
+- Start-Guard gegen verspätete Idle-Meldungen
+- Startbestätigung mit einmaligem Retry
+- Ende-Erkennung über Position und Videodauer
+- Idle-Fallback
+- Erkennung externer SmartTube-Skips
+- SponsorBlock-tolerante Übergänge
+- getrennte Zustände und Queues je TV
+
+## Konfiguration
+
+Die `.env` enthält nur Bootstrap-Werte. TVs und Laufzeiteinstellungen werden in der WebUI gepflegt und in SQLite gespeichert. Details stehen in [docs/configuration.md](docs/configuration.md).
+
+Die früheren Variablen `DEFAULT_TV` und `TV_DEVICES` werden nicht mehr verwendet.
 
 ## Updates und Backups
 
-### Update einer Quellcode-Installation
-
-```bash
-git pull
-docker compose down
-docker compose up -d --build
-```
-
-Die SQLite-Datenbank liegt im persistenten Datenverzeichnis und bleibt bei einem Container-Neubau erhalten.
-
-Vor groesseren Updates wird ein Backup empfohlen:
+Vor einem Update:
 
 ```bash
 cp data/partyqueue.db data/partyqueue-backup-$(date +%Y%m%d-%H%M).db
+cp -a adb adb-backup-$(date +%Y%m%d-%H%M)
 ```
 
-## Diagnose
-
-Siehe [docs/troubleshooting.md](docs/troubleshooting.md).
-
-Containerlogs:
+Update mit GHCR:
 
 ```bash
-docker compose logs --tail=200 -f
+docker compose pull
+docker compose up -d
 ```
 
-Playback-Ereignisse filtern:
-
-```bash
-docker compose logs --since=10m \
-  | grep PLAYBACK_DEBUG \
-  > playback-debug.log
-```
-
-## Sicherheit
-
-- `ADMIN_PASSWORD` vor dem ersten Start aendern.
-- `.env` niemals in Git einchecken.
-- YouTube-API-Key nicht oeffentlich teilen.
-- Hostoberflaeche nicht ohne Zugriffsschutz oeffentlich bereitstellen.
-- Bei oeffentlichem Zugriff HTTPS ueber einen Reverse Proxy verwenden.
-- Regelmaessige Backups des Datenverzeichnisses erstellen.
-
-Weitere Hinweise: [SECURITY.md](SECURITY.md)
-
-## Versionshistorie
-
-### V2.8.3 - Stabiler Home-Assistant-Release
-
-- Playback-Watchdog unabhaengig vom Home-Assistant-Webhook
-- Recovery nach SponsorBlock-Spruengen
-- Pflichtname und Hype-System
-- Archivsuche und Archivstatistiken
-- HTML- und PDF-Recap
-- Hostoberflaeche mit Tabs
-- Auf echten Partys produktiv getestet
-
-### V2.7
-
-- Party-Lifecycle
-- Partyarchiv und HTML-Recap
-- Playback-Diagnose
-- Start-Guard gegen Skip-Kaskaden
-
-### V2.6
-
-- Vollstaendige Playlist-Verwaltung
-- Filter, Kopieren, Verschieben und Drag-and-drop
-
-### V2.5
-
-- Stabile Multi-TV-Playback-Basis
-- Externe Skip-Erkennung
-- YouTube-Kontingent
-- Duplikat- und Wiederholungsschutz pro TV
-
-Details: [CHANGELOG.md](CHANGELOG.md)
-
-## Roadmap
-
-### V3.0 - Standalone Core
-
-- Home Assistant nicht mehr zwingend erforderlich
-- Direkte ADB-Verbindung aus dem Container
-- Wiedergabestatus direkt ueber ADB/MediaSession
-- TV-Verwaltung in der WebUI
-- Geraete in SQLite statt `TV_DEVICES`
-- ADB-Kopplung und Verbindungstest
-- Playback- und Geraeteoptionen in der WebUI
-- Home Assistant als optionale Integration
-
-### Distribution
-
-- Automatischer Container-Build ueber GitHub Actions
-- GitHub Container Registry
-- Versionierte Images und `latest`
-- Portainer-Stack ohne lokalen Build
-
-### Spaeter moeglich
-
-- Partyuebergreifende Analytics
-- Gaeste- und Kuenstler-Rankings
-- Hall of Fame
-- Automatische Best-of-Playlist
+Die ADB-Schlüssel sind vertraulich. Das Verzeichnis `adb/` niemals veröffentlichen oder committen.
 
 ## Entwicklung
 
-- `main`: stabiler Release-Zweig
-- `develop`: V3.0-Entwicklung
+Lokaler Build:
 
-Weitere Informationen: [CONTRIBUTING.md](CONTRIBUTING.md)
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Syntaxprüfungen:
+
+```bash
+python -m py_compile app/*.py
+node --check app/static/host.js
+node --check app/static/guest.js
+node --check userscript/partyqueue.user.js
+```
+
+Branchmodell:
+
+- `main`: aktueller stabiler Release
+- `develop`: Entwicklung des nächsten Releases
+- `feature/*`: neue Funktionen
+- `fix/*`: Fehlerkorrekturen
+
+## Roadmap
+
+Mögliche nächste Schritte für V3.1:
+
+- weitere mobile UX-Verbesserungen
+- Banner in HTML- und PDF-Recaps
+- zusätzliche Tests und automatisierte Release-Prüfungen
+- partyübergreifende Analytics und Best-of-Playlists
 
 ## Lizenz
 

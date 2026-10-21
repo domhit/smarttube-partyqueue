@@ -1,32 +1,30 @@
 # Sicherheit
 
-## Unterstuetzte Version
+## Unterstützte Versionen
 
-Sicherheitskorrekturen werden derzeit fuer den aktuellen stabilen Release bereitgestellt.
-
-| Version | Unterstuetzt |
-|---|---|
-| 2.8.x | Ja |
+| Version | Sicherheitsupdates |
+|---|---:|
+| 3.0.x | Ja |
+| 2.8.x | Nur kritische Korrekturen |
 | < 2.8 | Nein |
 
 ## Sicherheitsproblem melden
 
-Bitte Sicherheitsprobleme nicht als oeffentliches GitHub-Issue veroeffentlichen. Verwende stattdessen GitHub Private Vulnerability Reporting, sofern es fuer das Repository aktiviert ist, oder kontaktiere den Maintainer ueber einen privaten Kanal.
+Sicherheitsprobleme nicht als öffentliches Issue veröffentlichen. GitHub Private Vulnerability Reporting verwenden, sofern es für das Repository aktiviert ist, oder den Maintainer privat kontaktieren.
 
 Bitte angeben:
 
-- Betroffene Version
-- Beschreibung der Schwachstelle
-- Reproduktionsschritte
-- Moegliche Auswirkungen
-- Vorgeschlagene Korrektur, falls vorhanden
+- betroffene Version
+- Beschreibung und Reproduktionsschritte
+- mögliche Auswirkungen
+- vorgeschlagene Korrektur, falls vorhanden
 
 ## Betriebshinweise
 
-- `ADMIN_PASSWORD` aendern.
-- `.env` nicht committen.
-- YouTube-API-Key geheim halten.
-- Hostoberflaeche nicht ungeschuetzt im Internet bereitstellen.
-- HTTPS und Zugriffsbeschraenkungen am Reverse Proxy verwenden.
-- Datenverzeichnis regelmaessig sichern.
-- Gast- und Hostzugriff nach Moeglichkeit getrennt regeln.
+- `ADMIN_PASSWORD` vor dem ersten Start ändern.
+- `.env`, YouTube API Key und ADB-Schlüssel geheim halten.
+- Hostoberfläche nicht ungeschützt öffentlich bereitstellen.
+- HTTPS und Zugriffsbeschränkungen am Reverse Proxy verwenden.
+- Gast- und Hostzugriff nach Möglichkeit trennen.
+- `/app/data` und `/root/.android` regelmäßig sichern.
+- hochgeladene Banner als nicht vertrauenswürdige Eingaben behandeln; zugelassen sind JPG, PNG und WebP bis 5 MB.

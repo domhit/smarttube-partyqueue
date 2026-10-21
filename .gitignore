@@ -4,3 +4,5 @@ __pycache__/
 data/*.db*
 
 adb/
+data/banners/*
+!data/banners/.gitkeep
