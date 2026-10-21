@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import datetime,timezone
 from zoneinfo import ZoneInfo
 import httpx
-from fastapi import FastAPI,Header,HTTPException,WebSocket,WebSocketDisconnect
+from fastapi import FastAPI,Header,HTTPException,WebSocket,WebSocketDisconnect,UploadFile,File
 from fastapi.responses import FileResponse,HTMLResponse,PlainTextResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
