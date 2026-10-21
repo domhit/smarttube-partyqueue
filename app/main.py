@@ -267,7 +267,8 @@ async def life(app):
    try:await adb_monitor_task
    except asyncio.CancelledError:pass
 
-app=FastAPI(version='3.0.0-beta2',lifespan=life);B=Path(__file__).parent;app.mount('/static',StaticFiles(directory=B/'static'),name='static')
+app=FastAPI(version='3.0.0-beta2',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
+BANNERS.mkdir(parents=True,exist_ok=True);app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
