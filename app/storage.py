@@ -1,5 +1,5 @@
 from .db import conn
-SETTING_TYPES={"max_video_minutes":int,"max_requests_per_guest":int,"search_cache_hours":int,"search_min_length":int,"search_results":int,"youtube_search_daily_limit":int,"youtube_search_warning_at":int,"youtube_search_hard_stop_at":int,"base_playlist_recent_exclude":int,"prestart_seconds":float,"idle_fallback_delay":float,"prestart_idle_guard":float,"external_skip_min_previous":float,"external_skip_max_new":float,"play_confirm_timeout":float,"play_retry_timeout":float,"play_confirm_max_position":float,"rest_poll_interval":float,"sync_drift_tolerance":float,"sync_resume_margin":float,"sync_seek_threshold":float,"youtube_api_key":str,"tz":str}
+SETTING_TYPES={"max_video_minutes":int,"max_requests_per_guest":int,"search_cache_hours":int,"search_min_length":int,"search_results":int,"youtube_search_daily_limit":int,"youtube_search_warning_at":int,"youtube_search_hard_stop_at":int,"base_playlist_recent_exclude":int,"prestart_seconds":float,"idle_fallback_delay":float,"prestart_idle_guard":float,"external_skip_min_previous":float,"external_skip_max_new":float,"play_confirm_timeout":float,"play_retry_timeout":float,"play_confirm_max_position":float,"rest_poll_interval":float,"queue_prefetch_interval":float,"sync_drift_tolerance":float,"sync_resume_margin":float,"sync_seek_threshold":float,"youtube_api_key":str,"tz":str}
 def list_tvs(enabled_only=False):
  with conn() as c:return [dict(r) for r in c.execute("SELECT * FROM tvs"+(" WHERE enabled=1" if enabled_only else "")+" ORDER BY name COLLATE NOCASE,id")]
 def get_tv(i):
@@ -34,7 +34,8 @@ def all_settings():
    except:out[k]=raw[k]
  return out
 def set_settings(v):
- if set(v)-set(SETTING_TYPES):raise ValueError('Unbekannte Einstellung')
+ unknown=set(v)-set(SETTING_TYPES)
+ if unknown:raise ValueError('Unbekannte Einstellung: '+', '.join(sorted(unknown)))
  with conn() as c:
   for k,x in v.items():c.execute('INSERT INTO settings_store(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(k,str(SETTING_TYPES[k](x))))
  return all_settings()

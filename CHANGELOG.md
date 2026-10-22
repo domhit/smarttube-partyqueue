@@ -4,7 +4,7 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ## [Unreleased]
 
-## [4.0.0-alpha1] - 2026-10-21
+## [4.1.0-alpha1] - 2026-10-21
 
 ### Added
 

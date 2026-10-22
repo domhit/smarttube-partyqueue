@@ -2,9 +2,7 @@ name: Build and publish container image
 
 on:
   push:
-    branches:
-      - develop
-      - develop-v4
+    branches: [develop]
     tags: ['v*']
   release:
     types: [published]
