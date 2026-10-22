@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports: ["8787:8000"]
-    volumes: ["./data:/app/data"]
+    volumes: ["./data:/app/data", "./adb:/root/.android"]
     healthcheck:
       test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s
