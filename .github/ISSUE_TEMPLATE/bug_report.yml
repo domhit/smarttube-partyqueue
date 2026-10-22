@@ -7,7 +7,7 @@ body:
     id: version
     attributes:
       label: PartyQueue-Version
-      placeholder: v3.1.0
+      placeholder: v4.0.0-alpha1
     validations:
       required: true
   - type: input

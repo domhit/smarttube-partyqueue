@@ -1,6 +1,6 @@
 services:
   smarttube-partyqueue:
-    image: ghcr.io/domhit/smarttube-partyqueue:3.1.0
+    image: ghcr.io/domhit/smarttube-partyqueue:4.0.0-alpha1
     container_name: smarttube-partyqueue
     restart: unless-stopped
     env_file:
@@ -9,7 +9,6 @@ services:
       - "8787:8000"
     volumes:
       - ./data:/app/data
-      - ./adb:/root/.android
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s

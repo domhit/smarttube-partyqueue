@@ -9,13 +9,13 @@ ghcr.io/domhit/smarttube-partyqueue
 ## Tags
 
 - Push auf `develop`: `develop` und `sha-<commit>`
-- Git-Tag `v3.1.0`: `v3.1.0`, `3.1.0`, `3.0` und `latest`
-- Vorabversionen: beispielsweise `v3.1.0-beta1` und `3.1.0-beta1`
+- Git-Tag `v4.0.0-alpha1`: `v4.0.0-alpha1`, `4.0.0-alpha1`, `3.0` und `latest`
+- Vorabversionen: beispielsweise `v4.0.0-alpha1-beta1` und `4.0.0-alpha1-beta1`
 
 ## Pull
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:3.1.0
+docker pull ghcr.io/domhit/smarttube-partyqueue:4.0.0-alpha1
 ```
 
 Für den aktuellen stabilen Release:
@@ -27,12 +27,12 @@ docker pull ghcr.io/domhit/smarttube-partyqueue:latest
 ## Veröffentlichung
 
 ```bash
-git tag -a v3.1.0 -m "SmartTube PartyQueue 3.1.0"
-git push origin v3.1.0
+git tag -a v4.0.0-alpha1 -m "SmartTube PartyQueue 4.0.0-alpha1"
+git push origin v4.0.0-alpha1
 ```
 
 Der Tag löst den Workflow aus. Das Paket muss auf GitHub auf `Public` stehen, wenn anonyme Pulls erlaubt sein sollen.
 
 ## Portainer und Compose
 
-`docker-compose.ghcr.yml` ist für diesen Release auf `3.1.0` festgesetzt. Wer automatisch dem neuesten stabilen Release folgen möchte, kann den Tag auf `latest` ändern.
+`docker-compose.ghcr.yml` ist für diesen Release auf `4.0.0-alpha1` festgesetzt. Wer automatisch dem neuesten stabilen Release folgen möchte, kann den Tag auf `latest` ändern.

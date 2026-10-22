@@ -1,4 +1,4 @@
-import asyncio,csv,html,io,json,logging,random,secrets,time,re
+import asyncio,csv,html,io,json,logging,random,secrets,time
 from xml.sax.saxutils import escape as xml_escape
 from collections import deque
 from contextlib import asynccontextmanager
@@ -21,7 +21,8 @@ from .config import settings
 from .db import conn,init_db
 from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings,set_default_tv,set_tv_enabled
 from .youtube import video_id,details,search,playlist,quota
-clients=set();locks={};pb={};guard={};idle={};play_pending={};sync_hold={};sync_last_state={};adb_monitor_task=None
+from .smarttube_api import playback_state as rest_state,play_url as rest_play,command as rest_command
+clients=set();locks={};pb={};guard={};idle={};play_pending={};sync_hold={};sync_last_state={};rest_monitor_task=None
 def devices(enabled_only=True):return list_tvs(enabled_only)
 log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
 def debug_event(kind,tv=None,**data):
@@ -58,7 +59,7 @@ class PlaylistReorder(BaseModel):playlist_id:int;ids:list[int]
 class PlaylistBulk(BaseModel):source_playlist_id:int;target_playlist_id:int;item_ids:list[int];mode:str='copy'
 class PlaylistItemPatch(BaseModel):enabled:bool
 class TvConfig(BaseModel):
- id:str;name:str;host:str='';enabled:bool=True;is_default:bool=False;ha_entity:str='';connection_mode:str='ha'
+ id:str;name:str;host:str='';api_port:int=8090;api_username:str='admin';api_password:str='';enabled:bool=True;is_default:bool=False
 class RuntimeSettingsPatch(BaseModel):
  values:dict
 class TvEnabledPatch(BaseModel):enabled:bool
@@ -86,10 +87,7 @@ def tvok(x,p):
  return x
 def pub(p):return {**p,'allowed_devices':[x for x in devices() if x['id'] in allow(p)]}
 def validate_sync_config(sync_mode,device_ids,lead):
- if not sync_mode:return
- if lead not in device_ids:raise HTTPException(400,'Der Lead-TV muss für die Party freigegeben sein')
- invalid=[tv_id for tv_id in device_ids if not get_tv(tv_id) or get_tv(tv_id).get('connection_mode')!='adb']
- if invalid:raise HTTPException(400,'Multi-TV-Sync unterstützt nur direkte ADB-Geräte: '+', '.join(invalid))
+ if sync_mode and lead not in device_ids:raise HTTPException(400,'Lead-TV muss freigegeben sein')
 async def state():
  p=party()
  with conn() as c:
@@ -106,98 +104,44 @@ async def cast():
   try:await w.send_json(s)
   except:dead.append(w)
  for w in dead:clients.discard(w)
-def adb_target(host):
- host=(host or '').strip()
- if not host:return None
- return host if ':' in host else host+':5555'
-
-async def run_adb(*args,timeout=12):
- proc=await asyncio.create_subprocess_exec('adb',*args,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
- try:out,_=await asyncio.wait_for(proc.communicate(),timeout=timeout)
- except asyncio.TimeoutError:
-  try:proc.kill()
-  except:pass
-  raise
- return proc.returncode,out.decode(errors='replace').strip()
-
-async def send_play_ha(x,attempt):
- debug_event('PLAY_REQUEST',x['target_tv'],transport='ha',queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
- try:
-  async with httpx.AsyncClient(timeout=settings.play_webhook_timeout) as c:
-   r=await asyncio.wait_for(c.post(f"{settings.ha_url.rstrip('/')}/api/webhook/{settings.ha_webhook_id}",json={'url':f"https://www.youtube.com/watch?v={x['video_id']}",'target_tv':x['target_tv'],'smarttube_package':settings.smarttube_package}),timeout=settings.play_webhook_timeout)
-   r.raise_for_status()
-  debug_event('PLAY_WEBHOOK_OK',x['target_tv'],queue_id=x.get('id'),status_code=r.status_code,attempt=attempt);return True
- except asyncio.TimeoutError:
-  debug_event('PLAY_WEBHOOK_TIMEOUT',x['target_tv'],queue_id=x.get('id'),timeout=settings.play_webhook_timeout,attempt=attempt);return False
- except Exception as e:
-  debug_event('PLAY_WEBHOOK_ERROR',x['target_tv'],queue_id=x.get('id'),error=repr(e),attempt=attempt);return False
-
-async def send_play_adb(x,tv,attempt):
- target=adb_target(tv.get('ip_address'))
- debug_event('PLAY_REQUEST',x['target_tv'],transport='adb',host=target,queue_id=x.get('id'),video_id=x.get('video_id'),title=x.get('title'),source=x.get('source'),attempt=attempt)
- if not target:
-  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='Kein Host eingetragen');return False
- try:
-  connect_code,connect_out=await run_adb('connect',target,timeout=settings.play_webhook_timeout)
-  if connect_code!=0 or ('connected to' not in connect_out.lower() and 'already connected' not in connect_out.lower()):
-   debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,stage='connect',output=connect_out);return False
-  url=f"https://www.youtube.com/watch?v={x['video_id']}"
-  code,out=await run_adb('-s',target,'shell','am','start','-a','android.intent.action.VIEW','-d',url,settings.smarttube_package,timeout=settings.play_webhook_timeout)
-  ok=code==0
-  debug_event('PLAY_ADB_OK' if ok else 'PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,host=target,output=out)
-  return ok
- except asyncio.TimeoutError:
-  debug_event('PLAY_ADB_TIMEOUT',x['target_tv'],queue_id=x.get('id'),attempt=attempt,timeout=settings.play_webhook_timeout);return False
- except FileNotFoundError:
-  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error='ADB ist nicht installiert');return False
- except Exception as e:
-  debug_event('PLAY_ADB_ERROR',x['target_tv'],queue_id=x.get('id'),attempt=attempt,error=repr(e));return False
-
 async def send_play_command_to_tv(x,tv_id,attempt):
  tv=get_tv(tv_id)
- if not tv:
-  debug_event('PLAY_TRANSPORT_ERROR',tv_id,queue_id=x.get('id'),attempt=attempt,error='TV nicht gefunden');return False
- payload={**x,'target_tv':tv_id}
- return await send_play_adb(payload,tv,attempt) if tv.get('connection_mode')=='adb' else await send_play_ha(payload,attempt)
-async def send_play_command(x,attempt):
- p=party();targets=[x['target_tv']]
- if p and p.get('sync_mode'):
-  targets=[d['id'] for d in pub(p)['allowed_devices']]
- debug_event('SYNC_PLAY_DISPATCH' if len(targets)>1 else 'PLAY_TARGETS',x['target_tv'],targets=targets,queue_id=x.get('id'),attempt=attempt)
- results=await asyncio.gather(*(send_play_command_to_tv(x,tv_id,attempt) for tv_id in targets),return_exceptions=True)
- return any(r is True for r in results)
-
-async def adb_media_key(tv_id,keycode,reason):
- tv=get_tv(tv_id);target=adb_target(tv.get('ip_address')) if tv else None
- if not target or tv.get('connection_mode')!='adb':return False
+ if not tv:return False
  try:
-  code,out=await run_adb('-s',target,'shell','input','keyevent',str(keycode),timeout=5)
-  ok=code==0;debug_event('SYNC_MEDIA_COMMAND',tv_id,keycode=keycode,reason=reason,ok=ok,output=out);return ok
- except Exception as e:debug_event('SYNC_MEDIA_COMMAND_ERROR',tv_id,keycode=keycode,reason=reason,error=repr(e));return False
+  r=await rest_play(tv,x['video_id']);debug_event('PLAY_REST_OK',tv_id,queue_id=x.get('id'),response=r);return True
+ except Exception as e:debug_event('PLAY_REST_ERROR',tv_id,error=repr(e));return False
+async def send_play_command(x,attempt):
+ p=party();targets=[d['id'] for d in pub(p)['allowed_devices']] if p and p.get('sync_mode') else [x['target_tv']]
+ return any(r is True for r in await asyncio.gather(*(send_play_command_to_tv(x,t,attempt) for t in targets),return_exceptions=True))
+async def rest_media_command(tv_id,name,reason,**params):
+ try:await rest_command(get_tv(tv_id),name,**params);debug_event('SYNC_REST_COMMAND',tv_id,command=name,reason=reason);return True
+ except Exception as e:debug_event('SYNC_REST_COMMAND_ERROR',tv_id,error=repr(e));return False
 async def sync_followers():
  p=party()
- if not p or not p.get('sync_mode'):sync_hold.clear();sync_last_state.clear();return
- lead=p['default_tv'];lead_state=pb.get(lead)
- if not lead_state:return
- followers=[d['id'] for d in pub(p)['allowed_devices'] if d['id']!=lead]
- state=lead_state.get('state');previous=sync_last_state.get(lead)
- if state!=previous and state in ('playing','paused','idle'):
-  key=126 if state=='playing' else 127
-  if state!='idle':await asyncio.gather(*(adb_media_key(tv,key,f'lead_{state}') for tv in followers))
-  sync_last_state[lead]=state;debug_event('SYNC_LEAD_STATE',lead,state=state,previous=previous,followers=followers)
+ if not p or not p.get('sync_mode'):return
+ lead=p['default_tv'];ls=pb.get(lead)
+ if not ls:return
+ followers=[d['id'] for d in pub(p)['allowed_devices'] if d['id']!=lead];state=ls.get('state');previous=sync_last_state.get(lead)
+ if state!=previous and state in ('playing','paused'):
+  await asyncio.gather(*(rest_media_command(t,'play' if state=='playing' else 'pause',f'lead_{state}') for t in followers));sync_last_state[lead]=state
  if state!='playing':return
- lead_pos=float(lead_state.get('media_position') or 0)
- for follower in followers:
-  fp=pb.get(follower)
-  if not fp or fp.get('state') not in ('playing','paused'):continue
-  follower_pos=float(fp.get('media_position') or 0);drift=follower_pos-lead_pos
-  if sync_hold.get(follower):
-   if drift<=settings.sync_resume_margin:
-    await adb_media_key(follower,126,'drift_resume');sync_hold.pop(follower,None);debug_event('SYNC_DRIFT_CORRECTED',follower,lead=lead,drift=round(drift,3))
-  elif drift>settings.sync_drift_tolerance:
-   await adb_media_key(follower,127,'drift_ahead');sync_hold[follower]=True;debug_event('SYNC_DRIFT_HOLD',follower,lead=lead,drift=round(drift,3),tolerance=settings.sync_drift_tolerance)
-  elif drift < -settings.sync_drift_tolerance:
-   debug_event('SYNC_DRIFT_BEHIND',follower,lead=lead,drift=round(drift,3),tolerance=settings.sync_drift_tolerance)
+ lp=float(ls.get('media_position') or 0)
+ for t in followers:
+  fs=pb.get(t)
+  if not fs:continue
+  drift=float(fs.get('media_position') or 0)-lp
+  if abs(drift)>=settings.sync_seek_threshold:await rest_media_command(t,'seek','drift_seek',positionMs=int(lp*1000));debug_event('SYNC_DRIFT_SEEK',t,drift=drift)
+async def poll_rest_tv(tv):
+ try:
+  d=await rest_state(tv);vid=d.get('videoId') or '';state='buffering' if d.get('isLoading') else ('playing' if d.get('isPlaying') else ('paused' if vid else 'idle'))
+  await process_progress(Progress(target_tv=tv['id'],state=state,media_position=float(d.get('positionMs') or 0)/1000,app_id='smarttube_rest'),'smarttube_rest')
+  pb[tv['id']].update(video_id=vid,title=d.get('title') or '',duration=float(d.get('durationMs') or 0)/1000)
+ except Exception as e:debug_event('REST_POLL_ERROR',tv['id'],error=repr(e))
+async def rest_monitor_loop():
+ try:
+  while True:
+   await asyncio.gather(*(poll_rest_tv(t) for t in list_tvs(True)));await sync_followers();await asyncio.sleep(max(.25,settings.rest_poll_interval))
+ except asyncio.CancelledError:pass
 async def play_watchdog(tv,queue_id,x):
  try:
   debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout)
@@ -251,75 +195,23 @@ async def metadata(v=None,u=None):
  v=v or video_id(u or'');a=await details([v]) if v else[]
  if not a:raise HTTPException(400,'Video nicht verfügbar')
  return a[0]
-def parse_adb_media_session(output,package,device_uptime=None):
- blocks=re.split(r'(?=MediaSessionRecord\{)',output)
- candidates=[b for b in blocks if package in b]
- if not candidates:return {'state':'idle','media_position':0,'app_id':None}
- def parse_block(block):
-  playback=re.search(r'PlaybackState\s*\{\s*state=(?:(?P<name>[A-Z_]+)\()?(?P<code>\d+)\)?,\s*position=(?P<position>-?\d+).*?speed=(?P<speed>-?[0-9.]+).*?updated=(?P<updated>\d+)',block,re.IGNORECASE)
-  if not playback:return None
-  code=int(playback.group('code'));base_ms=max(0,int(playback.group('position')));speed=float(playback.group('speed'));updated_ms=int(playback.group('updated'))
-  state={3:'playing',2:'paused',6:'buffering',8:'connecting'}.get(code,'idle')
-  position_ms=base_ms
-  if state=='playing' and device_uptime is not None and speed>0:
-   position_ms+=max(0,device_uptime*1000-updated_ms)*speed
-  return {'state':state,'media_position':position_ms/1000,'app_id':package,'_code':code,'_base_position':base_ms/1000,'_updated':updated_ms,'_speed':speed}
- parsed=[(b,parse_block(b)) for b in candidates]
- parsed=[(b,x) for b,x in parsed if x]
- if not parsed:return {'state':'idle','media_position':0,'app_id':package}
- block,data=max(parsed,key=lambda item:(item[1]['state'] in ('playing','paused','buffering','connecting'),'active=true' in item[0].lower(),len(item[0])))
- for key in ('_code','_base_position','_updated','_speed'):data.pop(key,None)
- return data
-
-async def poll_adb_tv(tv):
- target=adb_target(tv.get('ip_address'))
- if not target:return
- try:
-  code,uptime_out=await run_adb('-s',target,'shell','cat','/proc/uptime',timeout=max(3,settings.adb_poll_interval))
-  if code!=0:
-   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='uptime',output=uptime_out);return
-  try:device_uptime=float(uptime_out.split()[0])
-  except (ValueError,IndexError):
-   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='uptime_parse',output=uptime_out);return
-  code,out=await run_adb('-s',target,'shell','dumpsys','media_session',timeout=max(3,settings.adb_poll_interval))
-  if code!=0:
-   debug_event('ADB_POLL_ERROR',tv['id'],host=target,stage='media_session',output=out);return
-  data=parse_adb_media_session(out,settings.smarttube_package,device_uptime)
-  old=pb.get(tv['id'],{})
-  changed=data['state']!=old.get('state') or abs(data['media_position']-float(old.get('media_position',0) or 0))>=0.5 or data['app_id']!=old.get('app_id')
-  if changed:await process_progress(Progress(target_tv=tv['id'],**data),source='adb')
- except asyncio.TimeoutError:debug_event('ADB_POLL_TIMEOUT',tv['id'],host=target)
- except Exception as e:debug_event('ADB_POLL_ERROR',tv['id'],host=target,error=repr(e))
-
-async def adb_monitor_loop():
- debug_event('ADB_MONITOR_STARTED',interval=settings.adb_poll_interval)
- try:
-  while True:
-   tvs=[tv for tv in list_tvs(True) if tv.get('connection_mode')=='adb' and tv.get('ip_address')]
-   if tvs:await asyncio.gather(*(poll_adb_tv(tv) for tv in tvs))
-   await sync_followers()
-   await asyncio.sleep(max(0.5,settings.adb_poll_interval))
- except asyncio.CancelledError:debug_event('ADB_MONITOR_STOPPED')
-
 @asynccontextmanager
 async def life(app):
- global adb_monitor_task
- init_db();apply_runtime_settings(settings);adb_monitor_task=asyncio.create_task(adb_monitor_loop())
+ global rest_monitor_task
+ init_db();apply_runtime_settings(settings);rest_monitor_task=asyncio.create_task(rest_monitor_loop())
  try:yield
  finally:
-  if adb_monitor_task:
-   adb_monitor_task.cancel()
-   try:await adb_monitor_task
-   except asyncio.CancelledError:pass
-
-app=FastAPI(version='3.1.0',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
+  rest_monitor_task.cancel()
+  try:await rest_monitor_task
+  except asyncio.CancelledError:pass
+app=FastAPI(version='4.0.0-alpha1',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
 BANNERS.mkdir(parents=True,exist_ok=True);app.mount("/banners",StaticFiles(directory=BANNERS),name="banners");app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'3.1.0'}
+async def health():return {'ok':True,'version':'4.0.0-alpha1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -392,52 +284,11 @@ async def admin_tv_enabled(tv_id:str,b:TvEnabledPatch,x_admin_password:str=Heade
  try:r=set_tv_enabled(tv_id,b.enabled)
  except ValueError as e:raise HTTPException(409,str(e))
  await cast();return r
-@app.post('/api/admin/tvs/{tv_id}/adb-test')
-async def admin_tv_adb_test(tv_id:str,x_admin_password:str=Header(default='')):
+@app.post('/api/admin/tvs/{tv_id}/rest-test')
+async def rest_test(tv_id:str,x_admin_password:str=Header(default='')):
  au(x_admin_password);tv=get_tv(tv_id)
- if not tv:raise HTTPException(404,'TV nicht gefunden')
- host=(tv.get('ip_address') or '').strip()
- if not host:raise HTTPException(400,'Kein Host eingetragen')
- if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
- target=host if ':' in host else host+':5555'
- try:
-  proc=await asyncio.create_subprocess_exec('adb','connect',target,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
-  out,_=await asyncio.wait_for(proc.communicate(),timeout=12);text=out.decode(errors='replace').strip()
- except asyncio.TimeoutError:
-  try:proc.kill()
-  except:pass
-  raise HTTPException(504,'ADB-Verbindung hat das Zeitlimit überschritten')
- except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
- ok=proc.returncode==0 and ('connected to' in text.lower() or 'already connected' in text.lower())
- debug_event('ADB_TEST',tv_id,host=target,ok=ok,output=text)
- return {'ok':ok,'host':target,'output':text}
-@app.post('/api/admin/adb/pair')
-async def admin_adb_pair(b:AdbPairRequest,x_admin_password:str=Header(default='')):
- au(x_admin_password);host=b.host.strip();code=b.pair_code.strip()
- if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
- if not 1<=b.pair_port<=65535:raise HTTPException(400,'Pairing-Port ist ungültig')
- if not re.fullmatch(r'\d{6}',code):raise HTTPException(400,'Pairing-Code muss aus 6 Ziffern bestehen')
- pair_target=f'{host}:{b.pair_port}'
- try:
-  rc,out=await run_adb('pair',pair_target,code,timeout=20)
- except asyncio.TimeoutError:raise HTTPException(504,'ADB-Pairing hat das Zeitlimit überschritten')
- except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
- ok=rc==0 and ('successfully paired' in out.lower() or 'already paired' in out.lower())
- debug_event('ADB_PAIR',host=pair_target,ok=ok,output=out)
- if not ok:raise HTTPException(409,out or 'ADB-Pairing fehlgeschlagen')
- return {'ok':True,'host':pair_target,'output':out}
-@app.post('/api/admin/adb/connect')
-async def admin_adb_connect(b:AdbPairRequest,x_admin_password:str=Header(default='')):
- au(x_admin_password);host=b.host.strip()
- if not re.fullmatch(r'[A-Za-z0-9._:-]+',host):raise HTTPException(400,'Host enthält ungültige Zeichen')
- target=adb_target(host)
- try:rc,out=await run_adb('connect',target,timeout=12)
- except asyncio.TimeoutError:raise HTTPException(504,'ADB-Verbindung hat das Zeitlimit überschritten')
- except FileNotFoundError:raise HTTPException(500,'ADB ist im Container nicht installiert')
- ok=rc==0 and ('connected to' in out.lower() or 'already connected' in out.lower())
- debug_event('ADB_CONNECT',host=target,ok=ok,output=out)
- if not ok:raise HTTPException(409,out or 'ADB-Verbindung fehlgeschlagen')
- return {'ok':True,'host':target,'output':out}
+ try:return {'ok':True,'state':await rest_state(tv)}
+ except Exception as e:raise HTTPException(502,str(e))
 @app.post('/api/admin/party/banner')
 async def party_banner_upload(banner:UploadFile=File(...),x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party()
@@ -591,7 +442,7 @@ async def process_progress(b:Progress,source='home_assistant'):
  if p.get('sync_mode') and tv!=p['default_tv']:
   debug_event('SYNC_FOLLOWER_PROGRESS',tv,lead=p['default_tv'],state=b.state,position=round(new_pos,3),drift=round(new_pos-float(pb.get(p['default_tv'],{}).get('media_position',new_pos) or new_pos),3));await cast();return {'ok':True,'follower':True}
  pending=play_pending.get(tv)
- if pending and b.state in ('playing','buffering') and b.app_id==settings.smarttube_package:
+ if pending and b.state in ('playing','buffering') and b.app_id=='smarttube_rest':
   if new_pos<=settings.play_confirm_max_position:
    play_pending.pop(tv,None)
    if pending.get('task') and not pending['task'].done():pending['task'].cancel()
@@ -599,12 +450,12 @@ async def process_progress(b:Progress,source='home_assistant'):
   else:debug_event('PLAY_CONFIRM_REJECTED',tv,queue_id=pending['queue_id'],position=round(new_pos,3),max_position=settings.play_confirm_max_position,state=b.state)
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
  duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None
- valid_app=b.app_id==settings.smarttube_package;active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
+ valid_app=b.app_id=='smarttube_rest';active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
  end_match=bool(r and valid_app and active_state and duration and (new_pos>=end_threshold or (duration - new_pos)<=1.0))
  reset_match=bool(r and valid_app and active_state and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
  idle_end=bool(r and b.state=='idle' and (old_pos>=end_threshold or (duration - old_pos)<=1.0)) if end_threshold is not None else False
  idle_skip=bool(r and b.state=='idle' and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
- debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app=settings.smarttube_package,skip_enabled=True,guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
+ debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app='smarttube_rest',skip_enabled=True,guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
  if r and valid_app and active_state:
   debug_event('DECISION',tv,end_match=end_match,skip_match=reset_match,skip_enabled=True,state=b.state,old_state=old_state,old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],end_threshold=round(end_threshold,3) if end_threshold is not None else None,old_threshold=settings.external_skip_min_previous,new_threshold=settings.external_skip_max_new,guard_remaining=round(guard_remaining,3))
   if end_match:
@@ -616,7 +467,7 @@ async def process_progress(b:Progress,source='home_assistant'):
  elif r and b.state=='idle' and idle_skip:
   debug_event('EXTERNAL_SKIP_DETECTED',tv,old_position=round(old_pos,3),new_position=0,old_state=old_state,new_state='idle',method='idle_before_end');await done(tv,'skipped','idle_before_end');return {'ok':True}
  elif r:
-  debug_event('DECISION_SKIPPED',tv,reason='state_or_app_mismatch',state=b.state,app_id=b.app_id,expected_app=settings.smarttube_package,idle_end=idle_end,idle_skip=idle_skip)
+  debug_event('DECISION_SKIPPED',tv,reason='state_or_app_mismatch',state=b.state,app_id=b.app_id,expected_app='smarttube_rest',idle_end=idle_end,idle_skip=idle_skip)
  if b.state=='idle' and now>=guard.get(tv,0):
   debug_event('IDLE_TIMER_SCHEDULED',tv,delay=settings.idle_fallback_delay)
   async def f():
@@ -629,18 +480,12 @@ async def process_progress(b:Progress,source='home_assistant'):
  await cast();return {'ok':True}
 
 @app.post('/api/playback/progress')
-async def progress(b:Progress,x_admin_password:str=Header(default='')):
- au(x_admin_password)
- tv=get_tv(b.target_tv)
- if tv and tv.get('connection_mode')=='adb':
-  debug_event('HA_PROGRESS_IGNORED',b.target_tv,state=b.state,reason='adb_mode');return {'ok':True,'ignored':True}
- return await process_progress(b,'home_assistant')
-
+async def progress(b:Progress,x_admin_password:str=Header(default='')):raise HTTPException(410,'V4 ist REST-only')
 @app.get('/api/admin/playback-debug')
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'3.1.0','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'4.0.0-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
@@ -782,7 +627,7 @@ def recap_html(p,rows):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '–';source='Wunsch' if r['source']=='request' else 'Grundplaylist';status='übersprungen' if r['status']=='skipped' else 'gespielt';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist'
   tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>🔥 {int(r.get('hypes') or 0)}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
  ranking=''.join(f'<li><span>{safe(n)}</span><strong>{v}</strong></li>' for n,v in sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10]) or '<li><span>Keine Wünsche</span><strong>0</strong></li>'
- return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V3.1.0</footer></main></body></html>"""
+ return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V4.0.0-alpha1</footer></main></body></html>"""
 
 def recap_pdf(p,rows):
  out=io.BytesIO();doc=SimpleDocTemplate(out,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=15*mm,bottomMargin=15*mm,title=f"{p['name']} - Party Recap",author='SmartTube PartyQueue')
@@ -802,7 +647,7 @@ def recap_pdf(p,rows):
  for i,r in enumerate(rows,1):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status} - Hype {int(r.get('hypes') or 0)}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
  tt=Table(tracks,colWidths=[10*mm,16*mm,81*mm,37*mm,16*mm],repeatRows=1);tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(0,0),(1,-1),'CENTER'),('ALIGN',(4,0),(4,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]));story.append(tt)
- def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V3.1.0');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
+ def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V4.0.0-alpha1');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
  doc.build(story,onFirstPage=footer,onLaterPages=footer);out.seek(0);return out
 
 @app.get('/api/party/{pid}/export/{fmt}')

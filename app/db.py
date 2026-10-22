@@ -22,11 +22,11 @@ def init_db():
   CREATE TABLE IF NOT EXISTS hype_votes(queue_id INTEGER,guest_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(queue_id,guest_id));
   CREATE TABLE IF NOT EXISTS quota_usage(quota_date TEXT PRIMARY KEY,search_api_calls INTEGER DEFAULT 0,search_cache_hits INTEGER DEFAULT 0,search_failures INTEGER DEFAULT 0,quota_exceeded INTEGER DEFAULT 0,playlist_api_calls INTEGER DEFAULT 0,last_search_at TEXT);
   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS tvs(id TEXT PRIMARY KEY,name TEXT NOT NULL,ip_address TEXT DEFAULT '',enabled INTEGER DEFAULT 1,is_default INTEGER DEFAULT 0,ha_entity TEXT DEFAULT '',adb_serial TEXT DEFAULT '',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS tvs(id TEXT PRIMARY KEY,name TEXT NOT NULL,ip_address TEXT DEFAULT '',api_port INTEGER DEFAULT 8090,api_username TEXT DEFAULT 'admin',api_password TEXT DEFAULT '',enabled INTEGER DEFAULT 1,is_default INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS settings_store(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   INSERT OR IGNORE INTO playlists(id,name) VALUES(1,'Party allgemein');
   """)
-  defaults={k:getattr(settings,k) for k in ('tz','youtube_api_key','ha_url','ha_webhook_id','max_video_minutes','max_requests_per_guest','search_cache_hours','search_min_length','search_results','youtube_search_daily_limit','youtube_search_warning_at','youtube_search_hard_stop_at','base_playlist_recent_exclude','prestart_seconds','idle_fallback_delay','prestart_idle_guard','external_skip_min_previous','external_skip_max_new','play_confirm_timeout','play_retry_timeout','play_webhook_timeout','play_confirm_max_position','adb_poll_interval','sync_drift_tolerance','sync_resume_margin','smarttube_package')}
+  defaults={k:getattr(settings,k) for k in ('tz','youtube_api_key','max_video_minutes','max_requests_per_guest','search_cache_hours','search_min_length','search_results','youtube_search_daily_limit','youtube_search_warning_at','youtube_search_hard_stop_at','base_playlist_recent_exclude','prestart_seconds','idle_fallback_delay','prestart_idle_guard','external_skip_min_previous','external_skip_max_new','play_confirm_timeout','play_retry_timeout','play_confirm_max_position','rest_poll_interval','sync_drift_tolerance','sync_resume_margin','sync_seek_threshold')}
   for k,v in defaults.items():c.execute('INSERT OR IGNORE INTO settings_store(key,value) VALUES(?,?)',(k,str(v)))
   for n,t,d in [('guest_id','TEXT',"''"),('party_id','INTEGER','NULL'),('playlist_id','INTEGER','NULL'),('votes','INTEGER','0'),('admin_priority','INTEGER','0')]:
    if not col(c,'queue',n):c.execute(f'ALTER TABLE queue ADD COLUMN {n} {t} DEFAULT {d}')
@@ -34,7 +34,9 @@ def init_db():
   if not col(c,'parties','sync_mode'):c.execute('ALTER TABLE parties ADD COLUMN sync_mode INTEGER DEFAULT 0')
   if not col(c,'parties','banner_path'):c.execute("ALTER TABLE parties ADD COLUMN banner_path TEXT DEFAULT ''")
   c.execute('UPDATE parties SET detect_external_skip=1 WHERE detect_external_skip=0')
-  if not col(c,'tvs','connection_mode'):c.execute("ALTER TABLE tvs ADD COLUMN connection_mode TEXT DEFAULT 'ha'")
+  if not col(c,'tvs','api_port'):c.execute("ALTER TABLE tvs ADD COLUMN api_port INTEGER DEFAULT 8090")
+  if not col(c,'tvs','api_username'):c.execute("ALTER TABLE tvs ADD COLUMN api_username TEXT DEFAULT 'admin'")
+  if not col(c,'tvs','api_password'):c.execute("ALTER TABLE tvs ADD COLUMN api_password TEXT DEFAULT ''")
   # V2.7 archive migration: keep the newest active party and enforce the invariant.
   c.execute("UPDATE parties SET active=0,ended_at=COALESCE(ended_at,CURRENT_TIMESTAMP) WHERE active=1 AND id<>(SELECT MAX(id) FROM parties WHERE active=1)")
   c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_parties_one_active ON parties(active) WHERE active=1')
