@@ -9,7 +9,7 @@ curl http://127.0.0.1:8787/api/health
 Erwartet:
 
 ```json
-{"ok":true,"version":"4.1.0-alpha1"}
+{"ok":true,"version":"4.2.0-alpha1"}
 ```
 
 ## Containerlogs

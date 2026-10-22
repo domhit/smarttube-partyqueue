@@ -1,6 +1,6 @@
 services:
   smarttube-partyqueue:
-    image: ghcr.io/domhit/smarttube-partyqueue:4.1.0-alpha1
+    image: ghcr.io/domhit/smarttube-partyqueue:4.2.0-alpha1
     container_name: smarttube-partyqueue
     restart: unless-stopped
     env_file:
