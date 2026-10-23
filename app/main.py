@@ -587,11 +587,17 @@ async def process_progress(b:Progress,source='home_assistant'):
 
 @app.post('/api/playback/progress')
 async def progress(b:Progress,x_admin_password:str=Header(default='')):raise HTTPException(410,'V4 ist REST-only')
+async def collect_smarttube_queues():
+  queues = {} 
+  for tv in devices():
+    try:q=await rest_queue_state(tv);queues[tv['id']]={'name': tv['name'],'raw_queue_response': q,'currentVideoId': q.get('currentVideoId'),'currentTitle': q.get('currentTitle'),'currentIndex': q.get('currentIndex'),'items': q.get('items', [])}
+    except Exception as e:queues[tv['id']]={'name': tv['name'],'error':repr(e)}
+  return queues
 @app.get('/api/admin/playback-debug')
 async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'4.3.0-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'events':events[-limit:]}
+ return {'version':'4.3.1-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'smarttube_queues':await collect_smarttube_queues(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):

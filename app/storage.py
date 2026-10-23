@@ -34,11 +34,23 @@ def all_settings():
    except:out[k]=raw[k]
  return out
 def set_settings(v):
- unknown=set(v)-set(SETTING_TYPES)
- if unknown:raise ValueError('Unbekannte Einstellung: '+', '.join(sorted(unknown)))
- with conn() as c:
-  for k,x in v.items():c.execute('INSERT INTO settings_store(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(k,str(SETTING_TYPES[k](x))))
- return all_settings()
+
+   # Altlasten aus früheren Versionen ignorieren
+   v = {
+      k: x
+      for k, x in v.items()
+      if k in SETTING_TYPES
+   }
+
+   with conn() as c:
+      for k, x in v.items():
+         c.execute(
+            'INSERT INTO settings_store(key,value) VALUES(?,?) '
+            'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+            (k, str(SETTING_TYPES[k](x)))
+         )
+
+   return all_settings()
 def apply_runtime_settings(s):
  for k,v in all_settings().items():setattr(s,k,v)
 def set_default_tv(i):
