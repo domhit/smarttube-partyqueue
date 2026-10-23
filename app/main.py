@@ -108,7 +108,7 @@ def ensure_queue_candidates(queue_tv,count=2):
  p=party()
  if not p:return []
  with conn() as c:
-  rows=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' ORDER BY admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id LIMIT ?",(p['id'],queue_tv,p['upvote_sort'],count))]
+  rows=[dict(r) for r in c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' ORDER BY CASE WHEN source='base' THEN 1 ELSE 0 END,admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id LIMIT ?",(p['id'],queue_tv,p['upvote_sort'],count))]
   while len(rows)<count:
    b=base(c,p,queue_tv)
    if not b:break
@@ -136,28 +136,22 @@ async def bootstrap_smarttube_with_video(tv,item,trigger='monitor'):
   now=time.monotonic()
   if now<bootstrap_cooldown.get(tv_id,0):return False
   bootstrap_cooldown[tv_id]=now+settings.adb_bootstrap_cooldown
-  host=(tv.get('ip_address') or '').split('://')[-1].split('/')[0].split(':')[0]
-  serial=f"{host}:{int(settings.adb_bootstrap_port)}";package=settings.smarttube_package;video_id=item['video_id'];url=f"https://www.youtube.com/watch?v={video_id}"
+  host=(tv.get('ip_address') or '').split('://')[-1].split('/')[0].split(':')[0];serial=f"{host}:{int(settings.adb_bootstrap_port)}";package=settings.smarttube_package;video_id=item['video_id'];url=f"https://www.youtube.com/watch?v={video_id}"
   debug_event('SMARTTUBE_ADB_BOOTSTRAP',tv_id,serial=serial,package=package,video_id=video_id,queue_id=item.get('id'),trigger=trigger)
   try:
-   await adb_exec('connect',serial,timeout=8)
-   await adb_exec('-s',serial,'shell','am','start','-a','android.intent.action.VIEW','-d',url,package,timeout=10)
-   debug_event('SMARTTUBE_ADB_VIDEO_START_OK',tv_id,serial=serial,package=package,video_id=video_id,queue_id=item.get('id'))
-  except Exception as e:
-   debug_event('SMARTTUBE_ADB_START_ERROR',tv_id,serial=serial,package=package,video_id=video_id,error=repr(e));return False
+   await adb_exec('connect',serial,timeout=8);await adb_exec('-s',serial,'shell','am','start','-a','android.intent.action.VIEW','-d',url,package,timeout=10);debug_event('SMARTTUBE_ADB_VIDEO_START_OK',tv_id,serial=serial,package=package,video_id=video_id,queue_id=item.get('id'))
+  except Exception as e:debug_event('SMARTTUBE_ADB_START_ERROR',tv_id,serial=serial,package=package,video_id=video_id,error=repr(e));return False
   deadline=time.monotonic()+settings.adb_bootstrap_ready_timeout;ready=None
   while time.monotonic()<deadline:
    await asyncio.sleep(.5)
    try:
-    ready=await rest_state(tv)
-    live=ready.get('videoId') or ''
+    ready=await rest_state(tv);live=ready.get('videoId') or ''
     if live==video_id:
      rest_unavailable_since.pop(tv_id,None);debug_event('SMARTTUBE_REST_READY',tv_id,waited=round(settings.adb_bootstrap_ready_timeout-(deadline-time.monotonic()),2));debug_event('BOOTSTRAP_VIDEO_CONFIRMED',tv_id,video_id=video_id,queue_id=item.get('id'),state='playing' if ready.get('isPlaying') else 'buffering' if ready.get('isLoading') else 'paused');asyncio.create_task(prefetch_party_queue());return True
    except Exception:pass
   if ready is not None:
    debug_event('BOOTSTRAP_VIDEO_MISMATCH',tv_id,expected_video_id=video_id,live_video_id=ready.get('videoId') or '')
-   try:
-    await rest_play(tv,video_id);debug_event('BOOTSTRAP_REST_PLAY_FALLBACK',tv_id,video_id=video_id,queue_id=item.get('id'));return True
+   try:await rest_play(tv,video_id);debug_event('BOOTSTRAP_REST_PLAY_FALLBACK',tv_id,video_id=video_id,queue_id=item.get('id'));return True
    except Exception as e:debug_event('BOOTSTRAP_REST_PLAY_ERROR',tv_id,video_id=video_id,error=repr(e))
   else:debug_event('SMARTTUBE_REST_TIMEOUT',tv_id,video_id=video_id,timeout=settings.adb_bootstrap_ready_timeout)
   return False
@@ -166,8 +160,7 @@ async def ensure_smarttube_ready(tv,item=None):
  except Exception:pass
  item=item or playing_item(tv['id'])
  if not item:raise RuntimeError('SmartTube REST API nicht erreichbar und kein laufender Titel für den Bootstrap vorhanden')
- ok=await bootstrap_smarttube_with_video(tv,item,'play')
- if not ok:raise RuntimeError('SmartTube-Bootstrap fehlgeschlagen')
+ if not await bootstrap_smarttube_with_video(tv,item,'play'):raise RuntimeError('SmartTube-Bootstrap fehlgeschlagen')
  return await rest_state(tv)
 async def monitor_bootstrap(tv):
  tv_id=tv['id'];item=playing_item(tv_id)
@@ -230,8 +223,7 @@ async def send_play_command_to_tv(x,tv_id,attempt):
  if not tv:return False
  try:
   state=await ensure_smarttube_ready(tv,x)
-  if (state.get('videoId') or '')==x['video_id']:
-   debug_event('PLAY_ALREADY_CORRECT',tv_id,queue_id=x.get('id'),video_id=x['video_id']);return True
+  if (state.get('videoId') or '')==x['video_id']:debug_event('PLAY_ALREADY_CORRECT',tv_id,queue_id=x.get('id'),video_id=x['video_id']);return True
   r=await rest_play(tv,x['video_id']);debug_event('PLAY_REST_OK',tv_id,queue_id=x.get('id'),response=r);return True
  except Exception as e:debug_event('PLAY_REST_ERROR',tv_id,error=repr(e));return False
 async def send_play_command(x,attempt):
@@ -347,14 +339,14 @@ async def life(app):
   rest_monitor_task.cancel()
   try:await rest_monitor_task
   except asyncio.CancelledError:pass
-app=FastAPI(version='4.3.2-alpha1',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
+app=FastAPI(version='4.4.0-alpha1',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
 BANNERS.mkdir(parents=True,exist_ok=True);app.mount("/banners",StaticFiles(directory=BANNERS),name="banners");app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'4.3.2-alpha1'}
+async def health():return {'ok':True,'version':'4.4.0-alpha1'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -628,10 +620,11 @@ async def collect_smarttube_queues():
     except Exception as e:queues[tv['id']]={'name': tv['name'],'error':repr(e)}
   return queues
 @app.get('/api/admin/playback-debug')
-async def playback_debug(limit:int=200,tv:Optional[str]=None,x_admin_password:str=Header(default='')):
+async def playback_debug(limit:int=200,tv:Optional[str]=None,full:bool=False,x_admin_password:str=Header(default='')):
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
- return {'version':'4.3.2-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'smarttube_queues':await collect_smarttube_queues(),'events':events[-limit:]}
+ if not full:events=[x for x in events if x.get('kind') not in {'PROGRESS','QUEUE_WINDOW_READY'}]
+ return {'version':'4.4.0-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'smarttube_queues':await collect_smarttube_queues(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
@@ -773,7 +766,7 @@ def recap_html(p,rows):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '–';source='Wunsch' if r['source']=='request' else 'Grundplaylist';status='übersprungen' if r['status']=='skipped' else 'gespielt';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist'
   tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>🔥 {int(r.get('hypes') or 0)}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
  ranking=''.join(f'<li><span>{safe(n)}</span><strong>{v}</strong></li>' for n,v in sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10]) or '<li><span>Keine Wünsche</span><strong>0</strong></li>'
- return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V4.3.2-alpha1</footer></main></body></html>"""
+ return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V4.4.0-alpha1</footer></main></body></html>"""
 
 def recap_pdf(p,rows):
  out=io.BytesIO();doc=SimpleDocTemplate(out,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=15*mm,bottomMargin=15*mm,title=f"{p['name']} - Party Recap",author='SmartTube PartyQueue')
@@ -793,7 +786,7 @@ def recap_pdf(p,rows):
  for i,r in enumerate(rows,1):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status} - Hype {int(r.get('hypes') or 0)}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
  tt=Table(tracks,colWidths=[10*mm,16*mm,81*mm,37*mm,16*mm],repeatRows=1);tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(0,0),(1,-1),'CENTER'),('ALIGN',(4,0),(4,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]));story.append(tt)
- def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V4.3.2-alpha1');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
+ def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V4.4.0-alpha1');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
  doc.build(story,onFirstPage=footer,onLaterPages=footer);out.seek(0);return out
 
 @app.get('/api/party/{pid}/export/{fmt}')
