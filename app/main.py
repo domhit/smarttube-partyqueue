@@ -829,9 +829,22 @@ async def admin_settings_patch(b:RuntimeSettingsPatch,x_admin_password:str=Heade
 async def start(b:Tv,x_admin_password:str=Header(default='')):au(x_admin_password);return {'started':await nxt(b.target_tv)}
 @app.post('/api/admin/skip')
 async def skip(b:Tv,x_admin_password:str=Header(default='')):
- au(x_admin_password);debug_event('MANUAL_SKIP_BUTTON',b.target_tv)
- try:await rest_command(get_tv(b.target_tv),'next');return {'ok':True,'method':'smarttube_queue_next'}
- except Exception as e:debug_event('MANUAL_SKIP_REST_ERROR',b.target_tv,error=repr(e));await done(b.target_tv,'skipped','host_button_fallback');return {'ok':True,'method':'fallback'}
+ au(x_admin_password);p=party()
+ if not p:raise HTTPException(409,'Es läuft keine Party')
+ lead=p['default_tv'] if p.get('sync_mode') else tvok(b.target_tv,p)
+ targets=[d['id'] for d in pub(p)['allowed_devices']] if p.get('sync_mode') else [lead]
+ debug_event('MANUAL_SKIP_BUTTON',lead,sync_mode=bool(p.get('sync_mode')),targets=targets)
+ async def skip_tv(tv_id):
+  try:
+   await rest_command(get_tv(tv_id),'next');debug_event('MANUAL_SKIP_REST_OK',tv_id,lead=lead);return {'tv':tv_id,'ok':True}
+  except Exception as e:
+   debug_event('MANUAL_SKIP_REST_ERROR',tv_id,lead=lead,error=repr(e));return {'tv':tv_id,'ok':False,'error':repr(e)}
+ results=await asyncio.gather(*(skip_tv(tv_id) for tv_id in targets))
+ lead_result=next((r for r in results if r['tv']==lead),None)
+ if not lead_result or not lead_result['ok']:
+  await done(lead,'skipped','host_button_fallback')
+  return {'ok':True,'method':'fallback','lead':lead,'results':results}
+ return {'ok':True,'method':'smarttube_queue_next','lead':lead,'results':results}
 @app.post('/api/admin/queue/reorder')
 async def queue_reorder(b:QueueReorder,x_admin_password:str=Header(default='')):
  au(x_admin_password);p=party();tv=tvok(b.target_tv,p)
