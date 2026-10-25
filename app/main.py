@@ -171,35 +171,219 @@ async def monitor_bootstrap(tv):
  bootstrap_tasks[tv_id]=asyncio.create_task(run())
 async def prefetch_next(device_tv,queue_tv=None):
  queue_tv=queue_tv or device_tv
- if sync_mismatch_after.get(device_tv,0) > time.monotonic():return False;now=time.monotonic()
- if device_tv in play_pending or now<guard.get(device_tv,0):return False
- candidates=ensure_queue_candidates(queue_tv,2);tv=get_tv(device_tv)
- if not candidates or not tv:return False
- lock=queue_prefetch_locks.setdefault(device_tv,asyncio.Lock())
- if lock.locked():return False
+ now=time.monotonic()
+
+ if device_tv in play_pending or now<guard.get(device_tv,0):
+  return False
+
+ candidates=ensure_queue_candidates(queue_tv,2)
+ tv=get_tv(device_tv)
+
+ if not candidates or not tv:
+  return False
+
+ lock=queue_prefetch_locks.setdefault(
+  device_tv,
+  asyncio.Lock()
+ )
+
+ if lock.locked():
+  return False
+
  async with lock:
+
   try:
-   q=await rest_queue_state(tv);items=q.get('items') or [];current_index=int(q.get('currentIndex',-1));current_video=q.get('currentVideoId') or ''
-   desired_ids=[x['video_id'] for x in candidates]
+
+   q=await rest_queue_state(tv)
+
+   items=q.get('items') or []
+
+   current_index=int(
+    q.get('currentIndex',-1)
+   )
+
+   current_video=(
+    q.get('currentVideoId')
+    or ''
+   )
+
+   desired_ids=[
+    x['video_id']
+    for x in candidates
+   ]
+
+   transition_active=(
+    sync_mismatch_after.get(
+     device_tv,
+     0
+    )>time.monotonic()
+   )
+
    unwanted=[]
-   for item in items:
-    vid=item.get('videoId') or '';idx=int(item.get('index',0))
-    if vid and vid!=current_video and (idx<current_index or vid not in desired_ids):unwanted.append(vid)
+
+   if not transition_active:
+
+    for item in items:
+
+     vid=item.get('videoId') or ''
+
+     idx=int(
+      item.get('index',0)
+     )
+
+     if vid and vid!=current_video and (
+      idx<current_index
+      or vid not in desired_ids
+     ):
+      unwanted.append(vid)
+
    for vid in dict.fromkeys(unwanted):
-    try:await rest_queue_remove(tv,vid);debug_event('QUEUE_ITEM_REMOVED',device_tv,video_id=vid,reason='queue_window')
-    except Exception as e:debug_event('QUEUE_ITEM_REMOVE_ERROR',device_tv,video_id=vid,error=repr(e))
-   for offset,candidate in enumerate(candidates,1):
-    q=await rest_queue_state(tv);items=q.get('items') or [];current_index=int(q.get('currentIndex',-1));desired=current_index+offset
-    target=next((int(x.get('index',i)) for i,x in enumerate(items) if x.get('videoId')==candidate['video_id'] and int(x.get('index',i))>current_index),None)
+
+    try:
+
+     await rest_queue_remove(
+      tv,
+      vid
+     )
+
+     debug_event(
+      'QUEUE_ITEM_REMOVED',
+      device_tv,
+      video_id=vid,
+      reason='queue_window'
+     )
+
+    except Exception as e:
+
+     debug_event(
+      'QUEUE_ITEM_REMOVE_ERROR',
+      device_tv,
+      video_id=vid,
+      error=repr(e)
+     )
+
+   for offset,candidate in enumerate(
+    candidates,
+    1
+   ):
+
+    q=await rest_queue_state(tv)
+
+    items=q.get('items') or []
+
+    current_index=int(
+     q.get('currentIndex',-1)
+    )
+
+    desired=current_index+offset
+
+    target=next(
+     (
+      int(x.get('index',i))
+      for i,x in enumerate(items)
+      if (
+       x.get('videoId')
+       ==candidate['video_id']
+       and int(x.get('index',i))
+       >current_index
+      )
+     ),
+     None
+    )
+
     if target is None:
-     await rest_queue_add(tv,candidate['video_id']);await asyncio.sleep(.35);q=await rest_queue_state(tv);items=q.get('items') or [];current_index=int(q.get('currentIndex',-1));desired=current_index+offset
-     target=next((int(x.get('index',i)) for i,x in enumerate(items) if x.get('videoId')==candidate['video_id'] and int(x.get('index',i))>current_index),None)
-    if target is None:raise RuntimeError(f"Titel {candidate['video_id']} wurde nicht in der SmartTube-Queue gefunden")
+
+     await rest_queue_add(
+      tv,
+      candidate['video_id']
+     )
+
+     await asyncio.sleep(.35)
+
+     q=await rest_queue_state(tv)
+
+     items=q.get('items') or []
+
+     current_index=int(
+      q.get('currentIndex',-1)
+     )
+
+     desired=current_index+offset
+
+     target=next(
+      (
+       int(x.get('index',i))
+       for i,x in enumerate(items)
+       if (
+        x.get('videoId')
+        ==candidate['video_id']
+        and int(x.get('index',i))
+        >current_index
+       )
+      ),
+      None
+     )
+
+    if target is None:
+     raise RuntimeError(
+      f"Titel {candidate['video_id']} wurde nicht in der SmartTube-Queue gefunden"
+     )
+
     moved=target!=desired
-    if moved:await rest_queue_move(tv,target,desired)
-    if moved or not any(e.get('kind')=='QUEUE_PREFETCHED' and e.get('tv')==device_tv and e.get('queue_id')==candidate['id'] for e in list(diag)[-30:]):debug_event('QUEUE_PREFETCHED',device_tv,queue_tv=queue_tv,queue_id=candidate['id'],video_id=candidate['video_id'],slot=offset,from_index=target,to_index=desired)
-   q=await rest_queue_state(tv);debug_event('QUEUE_WINDOW_READY',device_tv,current_index=q.get('currentIndex'),item_count=len(q.get('items') or []),future_video_ids=desired_ids);return True
-  except Exception as e:debug_event('QUEUE_PREFETCH_ERROR',device_tv,queue_tv=queue_tv,error=repr(e));return False
+
+    if moved:
+     await rest_queue_move(
+      tv,
+      target,
+      desired
+     )
+
+    if moved or not any(
+     e.get('kind')
+     =='QUEUE_PREFETCHED'
+     and e.get('tv')
+     ==device_tv
+     and e.get('queue_id')
+     ==candidate['id']
+     for e in list(diag)[-30:]
+    ):
+     debug_event(
+      'QUEUE_PREFETCHED',
+      device_tv,
+      queue_tv=queue_tv,
+      queue_id=candidate['id'],
+      video_id=candidate['video_id'],
+      slot=offset,
+      from_index=target,
+      to_index=desired
+     )
+
+   q=await rest_queue_state(tv)
+
+   debug_event(
+    'QUEUE_WINDOW_READY',
+    device_tv,
+    current_index=q.get(
+     'currentIndex'
+    ),
+    item_count=len(
+     q.get('items') or []
+    ),
+    future_video_ids=desired_ids
+   )
+
+   return True
+
+  except Exception as e:
+
+   debug_event(
+    'QUEUE_PREFETCH_ERROR',
+    device_tv,
+    queue_tv=queue_tv,
+    error=repr(e)
+   )
+
+   return False
 async def prefetch_party_queue():
  p=party()
  if not p:return
