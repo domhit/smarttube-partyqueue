@@ -1,80 +1,72 @@
-# Fehlerbehebung
+# Troubleshooting V4.4.2
 
-## Health-Endpunkt
+## Healthcheck
 
 ```bash
-curl http://127.0.0.1:8787/api/health
+curl http://<partyqueue-host>:8000/api/health
 ```
 
 Erwartet:
 
 ```json
-{"ok":true,"version":"3.1.0"}
+{"ok":true,"version":"4.4.2"}
 ```
 
-## Containerlogs
+## TV-Diagnose
 
-```bash
-docker compose logs --tail=200 -f
+Unter **Host → TVs** für jedes Gerät prüfen:
+
+- REST erreichbar
+- ADB erreichbar und autorisiert
+
+ADB ist für den normalen REST-Betrieb nicht dauerhaft erforderlich, wird aber für Bootstrap und Foreground-Recovery benötigt.
+
+## SmartTube läuft, bleibt aber idle oder unsichtbar
+
+V4.4.2 erkennt den Fall, dass die REST-API erreichbar ist, aber nach einem erfolgreichen `/play` kein aktiver Titel bestätigt wird. PartyQueue versucht anschließend eine Foreground-Recovery über ADB und öffnet den erwarteten Titel erneut sichtbar in SmartTube.
+
+Relevante Diagnoseereignisse:
+
+```text
+PLAY_PENDING_IDLE
+FOREGROUND_RECOVERY_REQUIRED
+FOREGROUND_RECOVERY_STARTED
+PLAY_CONFIRMED_AFTER_FOREGROUND_RECOVERY
+FOREGROUND_RECOVERY_FAILED
 ```
 
-Playback-Ereignisse filtern:
+## ADB meldet offline oder unauthorized
 
-```bash
-docker compose logs --since=10m | grep PLAYBACK_DEBUG > playback-debug.log
+Am TV ADB-/USB-Debugging aktivieren und die Autorisierungsabfrage bestätigen. Danach den ADB-Test im TV-Tab erneut ausführen.
+
+Persistente ADB-Schlüssel liegen im gemounteten `adb/`-Verzeichnis.
+
+## Queue enthält nicht current + next + reserve
+
+Im vollständigen Playback-Debug auf folgende Ereignisse achten:
+
+```text
+QUEUE_PREFETCHED
+QUEUE_WINDOW_READY
+QUEUE_PREFETCH_ERROR
 ```
 
-## Direktes ADB funktioniert nicht
+Ein gesunder Zustand enthält in SmartTube normalerweise drei Einträge: den aktuellen Titel sowie zwei vorbereitete Folgetitel.
 
-Prüfen:
+## MultiSync
 
-- Drahtloses Debugging ist am Zielgerät aktiv.
-- Host/IP im TV-Editor ist korrekt.
-- Pairing-Code und Pairing-Port stammen aus dem aktuellen Pairing-Dialog des TVs.
-- Port 5555 beziehungsweise der vom Gerät angezeigte Verbindungsport ist erreichbar.
-- `./adb:/root/.android` ist persistent eingebunden.
-- Im Debug-Tab erscheinen `ADB_PAIR`, `ADB_CONNECT`, `ADB_TEST` oder `ADB_POLL_ERROR`.
-
-## SmartTube startet nicht
-
-- Verbindung unter **TVs → Verbinden/Testen** prüfen.
-- SmartTube-Paket unter **Einstellungen** prüfen. Standard: `org.smarttube.stable`.
-- Im Debug-Tab auf `PLAY_REQUEST`, `PLAY_ADB_OK`, `PLAY_RETRY` und `PLAY_CONFIRM_FAILED` achten.
-
-## Host zeigt „Noch nichts“
-
-Es existiert kein Queue-Eintrag mit Status `playing`. Im Debug-Tab den Ablauf ab `NEXT_QUEUE_SELECTED` oder `NEXT_BASE_SELECTED` prüfen.
-
-## Skip oder Titelende wird nicht erkannt
+Lead und Follower sollten dieselbe SmartTube-Queue haben. Bei abweichender Video-ID versucht PartyQueue einen Videoabgleich und anschließend bei Bedarf eine Positionskorrektur.
 
 Relevante Ereignisse:
 
-- `EXTERNAL_SKIP_DETECTED`
-- `END_DETECTED`
-- `IDLE_TIMER_SCHEDULED`
-- `IDLE_IGNORED_GUARD`
-- `DONE`
-
-Bei Problemen Diagnose-JSON und Containerlogs gemeinsam sichern.
-
-## YouTube-Suche
-
-- YouTube API Key unter **Host → Einstellungen** prüfen.
-- Kontingentanzeige in der Hostoberfläche kontrollieren.
-- Such-Mindestlänge und Ergebnisanzahl prüfen.
-- Nach Änderung der Ergebnisanzahl werden auch gecachte Ergebnisse auf das neue Limit begrenzt.
-
-## Banner wird nicht angezeigt
-
-```bash
-docker exec -it smarttube-partyqueue sh -c "ls -lah /app/data/banners"
+```text
+SYNC_VIDEO_MISMATCH
+SYNC_VIDEO_SWITCH
+SYNC_VIDEO_CONFIRMED
+SYNC_DRIFT_SEEK
 ```
 
-Zusätzlich prüfen:
-
-- `/app/data` ist persistent eingebunden.
-- die Datei ist über `/banners/<dateiname>` erreichbar.
-- der Browser wurde hart neu geladen.
+Auf allen MultiSync-Geräten sollten `Pause nach jedem Video` und `Stop nach jedem Video` deaktiviert sowie fortlaufende Wiedergabe aktiviert sein.
 
 ## Datenbank sichern
 

@@ -1,38 +1,44 @@
-# GitHub Container Registry
+# GHCR Deployment
 
-Der Workflow `.github/workflows/ghcr.yml` baut Images für `linux/amd64` und `linux/arm64` und veröffentlicht sie unter:
+Das produktive Image wird über GitHub Container Registry bereitgestellt:
 
 ```text
 ghcr.io/domhit/smarttube-partyqueue
 ```
 
-## Tags
-
-- Push auf `develop`: `develop` und `sha-<commit>`
-- Git-Tag `v3.1.0`: `v3.1.0`, `3.1.0`, `3.0` und `latest`
-- Vorabversionen: beispielsweise `v3.1.0-beta1` und `3.1.0-beta1`
-
-## Pull
+## Empfohlener Release
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:3.1.0
+docker pull ghcr.io/domhit/smarttube-partyqueue:4.4.2
 ```
 
-Für den aktuellen stabilen Release:
+Für Installationen, die automatisch dem jeweils aktuellen stabilen Release folgen sollen:
 
 ```bash
 docker pull ghcr.io/domhit/smarttube-partyqueue:latest
 ```
 
-## Veröffentlichung
+## Release-Tags
+
+Für einen stabilen V4.4.2-Release:
 
 ```bash
-git tag -a v3.1.0 -m "SmartTube PartyQueue 3.1.0"
-git push origin v3.1.0
+git tag -a v4.4.2 -m "SmartTube PartyQueue 4.4.2"
+git push origin v4.4.2
 ```
 
-Der Tag löst den Workflow aus. Das Paket muss auf GitHub auf `Public` stehen, wenn anonyme Pulls erlaubt sein sollen.
+Die Release-Pipeline soll mindestens `v4.4.2`, `4.4.2`, `4.4` und `latest` veröffentlichen.
 
-## Portainer und Compose
+## Compose
 
-`docker-compose.ghcr.yml` ist für diesen Release auf `3.1.0` festgesetzt. Wer automatisch dem neuesten stabilen Release folgen möchte, kann den Tag auf `latest` ändern.
+`docker-compose.ghcr.yml` ist auf `4.4.2` festgesetzt. Wer bewusst einer Entwicklungs- oder Vorabversion folgen möchte, ändert den Image-Tag explizit.
+
+Persistente Volumes:
+
+```yaml
+volumes:
+  - ./data:/app/data
+  - ./adb:/root/.android
+```
+
+`adb` enthält private ADB-Schlüssel und gehört nicht ins Repository.

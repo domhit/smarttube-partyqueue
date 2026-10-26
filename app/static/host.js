@@ -69,27 +69,319 @@ document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>st?.party?op
 setInterval(()=>{if(!st)return;let tv=$('#tv').value,p=st.playback[tv],c=st.current[tv];if(!p||!c||p.state!=='playing')return;let x=Math.min(c.duration_seconds,p.media_position+(Date.now()-progressStamp)/1000),bar=$('#current .progress>div'),label=$('#hostPos');if(bar)bar.style.width=`${Math.min(100,x/c.duration_seconds*100)}%`;if(label)label.textContent=fmt(x)},250);
 let debugData=null,debugTimer=null;
 function debugDetails(e){let skip=new Set(['seq','time','kind','tv']);return Object.entries(e).filter(([k])=>!skip.has(k)).map(([k,v])=>`${esc(k)}=${esc(typeof v==='object'?JSON.stringify(v):v)}`).join(' · ')}
-function renderDebug(data){debugData=data;$('#debugStatus').textContent=`${data.events.length} Ereignisse · ${new Date(data.generated_at).toLocaleTimeString('de-DE')}`;let selected=$('#debugTv').value,options=Object.entries(data.devices);if($('#debugTv').options.length===1){$('#debugTv').innerHTML='<option value="">Alle TVs</option>'+options.map(([id,d])=>`<option value="${id}">${esc(d.name)}</option>`).join('');$('#debugTv').value=selected}$('#debugDevices').innerHTML=options.map(([id,d])=>`<div class="debug-device"><b>${esc(d.name)}</b><span>${esc(d.state||'–')} · ${fmt(d.position||0)}</span><small>App: ${esc(d.app_id||'–')} · Guard: ${d.guard_remaining}s · Idle: ${d.idle_pending?'ja':'nein'} · Alter: ${d.age_seconds??'–'}s</small></div>`).join('');let events=selected?data.events.filter(e=>e.tv===selected):data.events;$('#debugEvents').innerHTML=[...events].reverse().map(e=>`<tr class="debug-${e.kind}"><td>${esc(e.time?.slice(11,23)||'')}</td><td>${esc(e.tv||'–')}</td><td><b>${esc(e.kind)}</b></td><td>${debugDetails(e)}</td></tr>`).join('')||'<tr><td colspan="4">Noch keine Diagnoseereignisse</td></tr>'}
-async function loadDebug(){try{let tv=$('#debugTv').value,q=tv?`?limit=500&tv=${encodeURIComponent(tv)}`:'?limit=500';renderDebug(await api('/api/admin/playback-debug'+q))}catch(e){$('#debugStatus').textContent='Fehler';toast(e.message)}}
-function debugLoop(){clearInterval(debugTimer);if($('#debugAuto').checked)debugTimer=setInterval(loadDebug,1500)}
-$('#debugRefresh').onclick=loadDebug;$('#debugAuto').onchange=debugLoop;$('#debugTv').onchange=loadDebug;$('#debugClear').onclick=async()=>{if(!confirm('Diagnoseereignisse wirklich leeren?'))return;await api('/api/admin/playback-debug',{method:'DELETE'});loadDebug()};$('#debugCopy').onclick=async()=>{if(!debugData)return;try{await navigator.clipboard.writeText(JSON.stringify(debugData,null,2));toast('Diagnose-JSON kopiert',true)}catch(e){toast('Kopieren nicht möglich')}};
+function renderSmartTubeQueues(data){
 
-const SETTING_FIELDS=[['youtube_api_key','YouTube API Key','password'],['ha_url','Home-Assistant URL','text'],['ha_webhook_id','HA Webhook-ID','text'],['smarttube_package','SmartTube Paket','text'],['max_video_minutes','Max. Videolänge (Min.)','number'],['max_requests_per_guest','Max. offene Wünsche','number'],['search_cache_hours','Suchcache (Stunden)','number'],['search_min_length','Min. Suchlänge','number'],['search_results','Suchergebnisse','number'],['youtube_search_daily_limit','YouTube Tageslimit','number'],['youtube_search_warning_at','YouTube Warnschwelle','number'],['youtube_search_hard_stop_at','YouTube Stoppschwelle','number'],['base_playlist_recent_exclude','Wiederholungsschutz','number'],['prestart_seconds','Vorlauf Titelende (Sek.)','number'],['idle_fallback_delay','Idle-Fallback (Sek.)','number'],['prestart_idle_guard','Start-Guard (Sek.)','number'],['external_skip_min_previous','Skip: alte Mindestposition','number'],['external_skip_max_new','Skip: neue Maximalposition','number'],['play_confirm_timeout','Startbestätigung (Sek.)','number'],['play_retry_timeout','Retry-Timeout (Sek.)','number'],['play_webhook_timeout','Webhook-Timeout (Sek.)','number'],['play_confirm_max_position','Max. Bestätigungsposition','number'],['adb_poll_interval','ADB-Abfrageintervall (Sek.)','number'],['sync_drift_tolerance','Sync: Drift-Toleranz (Sek.)','number'],['sync_resume_margin','Sync: Resume-Marge (Sek.)','number'],['tz','Zeitzone','text']];
-let tvItems=[],tvEditOriginalId=null;
-async function loadTvs(){try{tvItems=await api('/api/admin/tvs');renderTvs()}catch(e){toast(e.message)}}
-function renderTvs(){$('#tvList').innerHTML=tvItems.map(t=>`<div class="tv-admin-row"><label class="tv-default" title="Als Standardgerät setzen"><input type="radio" name="defaultTvAdmin" data-tvdefault="${esc(t.id)}" ${t.is_default?'checked':''} ${t.enabled?'':'disabled'}> Standard</label><div class="tv-admin-main"><b>${esc(t.name)}</b><div class="muted">ID: ${esc(t.id)} · Host: ${esc(t.ip_address||'–')}</div><small>Modus: ${t.connection_mode==='adb'?'Direktes ADB':'Home Assistant'} · Status: ${t.connection_mode==='adb'?'ADB MediaSession':esc(t.ha_entity||'HA nicht gesetzt')}</small></div><label class="enabled-toggle"><input type="checkbox" data-tvenabled="${esc(t.id)}" ${t.enabled?'checked':''} ${t.is_default?'disabled':''}> aktiv</label><div class="actions">${t.connection_mode==='adb'?`<button class="secondary" data-adbpair="${esc(t.id)}">ADB koppeln</button><button class="secondary" data-adbtest="${esc(t.id)}">Verbinden/Testen</button>`:''}<button data-tvedit="${esc(t.id)}">Bearbeiten</button><button class="danger" data-tvdel="${esc(t.id)}">Löschen</button></div></div>`).join('')||'Keine TVs';document.querySelectorAll('[data-tvdefault]').forEach(x=>x.onchange=()=>makeDefault(x.dataset.tvdefault));document.querySelectorAll('[data-tvenabled]').forEach(x=>x.onchange=()=>toggleTv(x.dataset.tvenabled,x.checked));document.querySelectorAll('[data-adbpair]').forEach(b=>b.onclick=()=>openAdbPair(b.dataset.adbpair));document.querySelectorAll('[data-adbtest]').forEach(b=>b.onclick=()=>testAdb(b.dataset.adbtest,b));document.querySelectorAll('[data-tvedit]').forEach(b=>b.onclick=()=>openTvEditor(b.dataset.tvedit));document.querySelectorAll('[data-tvdel]').forEach(b=>b.onclick=()=>removeTv(b.dataset.tvdel))}
-async function makeDefault(id){try{await api('/api/admin/tvs/'+encodeURIComponent(id)+'/default',{method:'POST'});toast('Standardgerät geändert',true);await loadTvs()}catch(e){toast(e.message);await loadTvs()}}
-async function toggleTv(id,enabled){try{await api('/api/admin/tvs/'+encodeURIComponent(id)+'/enabled',{method:'PATCH',body:J({enabled})});toast(enabled?'TV aktiviert':'TV deaktiviert',true);await loadTvs()}catch(e){toast(e.message);await loadTvs()}}
-async function testAdb(id,button){let old=button.textContent;button.disabled=true;button.textContent='Verbinde …';try{let r=await api('/api/admin/tvs/'+encodeURIComponent(id)+'/adb-test',{method:'POST'});toast(r.ok?'ADB verbunden: '+r.host:'ADB fehlgeschlagen: '+r.output,r.ok)}catch(e){toast(e.message)}finally{button.disabled=false;button.textContent=old}}
+   const root =
+      document.getElementById(
+         'smarttubeQueues'
+      );
+
+   if(!root){
+      return;
+   }
+
+   const queues =
+      data.smarttube_queues || {};
+
+   root.innerHTML =
+      Object.entries(queues)
+      .map(([id,q])=>{
+
+         if(q.error){
+
+            return `
+               <div class="debug-device">
+                  <b>${esc(id)}</b>
+                  <small>${esc(q.error)}</small>
+               </div>
+            `;
+         }
+
+         return `
+            <div class="debug-device">
+
+               <b>${esc(q.name)}</b>
+
+               <small>
+                  Video:
+                  ${esc(q.currentVideoId || '-')}
+               </small>
+
+               <small>
+                  Index:
+                  ${q.currentIndex}
+               </small>
+
+               <pre style="white-space:pre-wrap;font-size:11px">
+${esc(JSON.stringify(
+   q.raw_queue_response,
+   null,
+   2
+))}
+               </pre>
+
+            </div>
+         `;
+      })
+      .join('');
+}
+function renderDebug(data){debugData=data;$('#debugStatus').textContent=`${data.events.length} Ereignisse · ${new Date(data.generated_at).toLocaleTimeString('de-DE')}`;let selected=$('#debugTv').value,options=Object.entries(data.devices);if($('#debugTv').options.length===1){$('#debugTv').innerHTML='<option value="">Alle TVs</option>'+options.map(([id,d])=>`<option value="${id}">${esc(d.name)}</option>`).join('');$('#debugTv').value=selected}$('#debugDevices').innerHTML=options.map(([id,d])=>`<div class="debug-device"><b>${esc(d.name)}</b><span>${esc(d.state||'–')} · ${fmt(d.position||0)}</span><small>App: ${esc(d.app_id||'–')} · Guard: ${d.guard_remaining}s · Idle: ${d.idle_pending?'ja':'nein'} · Alter: ${d.age_seconds??'–'}s</small></div>`).join('');renderSmartTubeQueues(data);let events=selected?data.events.filter(e=>e.tv===selected):data.events;$('#debugEvents').innerHTML=[...events].reverse().map(e=>`<tr class="debug-${e.kind}"><td>${esc(e.time?.slice(11,23)||'')}</td><td>${esc(e.tv||'–')}</td><td><b>${esc(e.kind)}</b></td><td>${debugDetails(e)}</td></tr>`).join('')||'<tr><td colspan="4">Noch keine Diagnoseereignisse</td></tr>'}
+async function loadDebug(){try{let tv=$('#debugTv').value,full=$('#debugFull')?.checked,q=`?limit=500${tv?`&tv=${encodeURIComponent(tv)}`:''}${full?'&full=true':''}`;renderDebug(await api('/api/admin/playback-debug'+q))}catch(e){$('#debugStatus').textContent='Fehler';toast(e.message)}}
+function debugLoop(){clearInterval(debugTimer);if($('#debugAuto').checked)debugTimer=setInterval(loadDebug,1500)}
+$('#debugRefresh').onclick=loadDebug;$('#debugAuto').onchange=debugLoop;if($('#debugFull'))$('#debugFull').onchange=loadDebug;$('#debugTv').onchange=loadDebug;$('#debugClear').onclick=async()=>{if(!confirm('Diagnoseereignisse wirklich leeren?'))return;await api('/api/admin/playback-debug',{method:'DELETE'});loadDebug()};$('#debugCopy').onclick=async()=>{if(!debugData)return;try{await navigator.clipboard.writeText(JSON.stringify(debugData,null,2));toast('Diagnose-JSON kopiert',true)}catch(e){toast('Kopieren nicht möglich')}};
+
+const SETTING_FIELDS=[['youtube_api_key','YouTube API Key','password'],['max_video_minutes','Max. Videolänge (Min.)','number'],['max_requests_per_guest','Max. offene Wünsche','number'],['search_cache_hours','Suchcache (Stunden)','number'],['search_min_length','Min. Suchlänge','number'],['search_results','Suchergebnisse','number'],['youtube_search_daily_limit','YouTube Tageslimit','number'],['youtube_search_warning_at','YouTube Warnschwelle','number'],['youtube_search_hard_stop_at','YouTube Stoppschwelle','number'],['base_playlist_recent_exclude','Wiederholungsschutz','number'],['prestart_seconds','Vorlauf Titelende (Sek.)','number'],['idle_fallback_delay','Idle-Fallback (Sek.)','number'],['prestart_idle_guard','Start-Guard (Sek.)','number'],['external_skip_min_previous','Skip: alte Mindestposition','number'],['external_skip_max_new','Skip: neue Maximalposition','number'],['play_confirm_timeout','Startbestätigung (Sek.)','number'],['play_retry_timeout','Retry-Timeout (Sek.)','number'],['play_confirm_max_position','Max. Bestätigungsposition','number'],['rest_poll_interval','REST-Abfrageintervall (Sek.)','number'],['queue_prefetch_interval','Queue-Vorladeintervall (Sek.)','number'],['adb_bootstrap_enabled','ADB-Bootstrap aktiv (1/0)','number'],['adb_bootstrap_port','ADB-Port','number'],['adb_bootstrap_grace','REST-Ausfall vor ADB-Start (Sek.)','number'],['adb_bootstrap_ready_timeout','REST-Wartezeit nach ADB-Start (Sek.)','number'],['adb_bootstrap_cooldown','ADB-Start-Cooldown (Sek.)','number'],['smarttube_package','SmartTube Paket','text'],['sync_drift_tolerance','Sync: Drift-Toleranz (Sek.)','number'],['sync_resume_margin','Sync: Resume-Marge (Sek.)','number'],['tz','Zeitzone','text']];
+let tvItems=[],
+    tvEditOriginalId=null,
+    tvStatus={};
+
+async function loadTvs(){
+    try{
+        tvItems=await api('/api/admin/tvs');
+        renderTvs();
+    }catch(e){
+        toast(e.message);
+    }
+}
+
+function statusText(value,type){
+    if(!value){
+        return `${type}: noch nicht geprüft`;
+    }
+
+    if(value.ok){
+        if(type==='REST'){
+            return value.title
+                ? `REST: ✅ ${value.title}`
+                : 'REST: ✅ erreichbar';
+        }
+
+        return value.model
+            ? `ADB: ✅ ${value.model}`
+            : 'ADB: ✅ autorisiert';
+    }
+
+    let labels={
+        unauthorized:'⚠ nicht autorisiert',
+        offline:'⚠ offline',
+        timeout:'❌ Timeout',
+        unreachable:'❌ nicht erreichbar',
+        error:'❌ Fehler'
+    };
+
+    return (
+        `${type}: `
+        +(labels[value.status]||'❌ Fehler')
+    );
+}
+
+function renderTvs(){
+    $('#tvList').innerHTML=
+        tvItems.map(t=>{
+            let status=tvStatus[t.id]||{};
+
+            return `
+                <div class="tv-admin-row">
+
+                    <div class="tv-admin-main">
+
+                        <b>${esc(t.name)}</b>
+
+                        <div class="muted">
+                            ${esc(t.ip_address||'–')}:
+                            ${t.api_port||8090}
+                        </div>
+
+                        <small>
+                            ${esc(
+                                statusText(
+                                    status.rest,
+                                    'REST'
+                                )
+                            )}
+                            ·
+                            ${esc(
+                                statusText(
+                                    status.adb,
+                                    'ADB'
+                                )
+                            )}
+                        </small>
+
+                    </div>
+
+                    <div class="actions">
+
+                        <button
+                            data-resttest="${esc(t.id)}"
+                        >
+                            REST testen
+                        </button>
+
+                        <button
+                            data-adbtest="${esc(t.id)}"
+                        >
+                            ADB testen
+                        </button>
+
+                        <button
+                            data-tvedit="${esc(t.id)}"
+                        >
+                            Bearbeiten
+                        </button>
+
+                        <button
+                            class="danger"
+                            data-tvdel="${esc(t.id)}"
+                        >
+                            Löschen
+                        </button>
+
+                    </div>
+
+                </div>
+            `;
+        }).join('')
+        ||'Keine TVs';
+
+    document
+        .querySelectorAll('[data-resttest]')
+        .forEach(button=>{
+            button.onclick=()=>testRest(
+                button.dataset.resttest,
+                button
+            );
+        });
+
+    document
+        .querySelectorAll('[data-adbtest]')
+        .forEach(button=>{
+            button.onclick=()=>testAdb(
+                button.dataset.adbtest,
+                button
+            );
+        });
+
+    document
+        .querySelectorAll('[data-tvedit]')
+        .forEach(button=>{
+            button.onclick=()=>openTvEditor(
+                button.dataset.tvedit
+            );
+        });
+
+    document
+        .querySelectorAll('[data-tvdel]')
+        .forEach(button=>{
+            button.onclick=()=>removeTv(
+                button.dataset.tvdel
+            );
+        });
+}
+
+async function testRest(id,button){
+    let original=button.textContent;
+
+    button.disabled=true;
+    button.textContent='Prüfe …';
+
+    try{
+        let result=await api(
+            '/api/admin/tvs/'
+            +encodeURIComponent(id)
+            +'/rest-test',
+            {method:'POST'}
+        );
+
+        tvStatus[id]=tvStatus[id]||{};
+
+        tvStatus[id].rest={
+            ok:true,
+            status:result.status,
+            title:result.title
+        };
+
+        toast(
+            result.title
+                ? 'REST erreichbar: '+result.title
+                : 'REST API erreichbar',
+            true
+        );
+
+    }catch(e){
+        tvStatus[id]=tvStatus[id]||{};
+
+        tvStatus[id].rest={
+            ok:false,
+            status:'error',
+            detail:e.message
+        };
+
+        toast(
+            'REST-Test: '+e.message
+        );
+
+    }finally{
+        button.disabled=false;
+        button.textContent=original;
+        renderTvs();
+    }
+}
+
+async function testAdb(id,button){
+    let original=button.textContent;
+
+    button.disabled=true;
+    button.textContent='Prüfe …';
+
+    try{
+        let result=await api(
+            '/api/admin/tvs/'
+            +encodeURIComponent(id)
+            +'/adb-test',
+            {method:'POST'}
+        );
+
+        tvStatus[id]=tvStatus[id]||{};
+        tvStatus[id].adb=result;
+
+        if(result.ok){
+            toast(
+                result.model
+                    ? 'ADB bereit: '+result.model
+                    : 'ADB-Verbindung autorisiert',
+                true
+            );
+        }else{
+            toast(
+                'ADB-Test: '+result.detail
+            );
+        }
+
+    }catch(e){
+        tvStatus[id]=tvStatus[id]||{};
+
+        tvStatus[id].adb={
+            ok:false,
+            status:'error',
+            detail:e.message
+        };
+
+        toast(
+            'ADB-Test: '+e.message
+        );
+
+    }finally{
+        button.disabled=false;
+        button.textContent=original;
+        renderTvs();
+    }
+}
 function setTvEditorVisible(show){$('#tvEditor').classList.toggle('hidden',!show)}
-function openTvEditor(id=null){let old=tvItems.find(x=>x.id===id)||{id:'',name:'',ip_address:'',enabled:1,is_default:!tvItems.length,ha_entity:'',connection_mode:'adb'};tvEditOriginalId=id;$('#tvEditorTitle').textContent=id?'TV bearbeiten':'TV hinzufügen';$('#tvEditId').value=old.id;$('#tvEditId').disabled=!!id;$('#tvEditName').value=old.name;$('#tvEditHost').value=old.ip_address||'';$('#tvEditMode').value=old.connection_mode||'adb';$('#tvEditHa').value=old.ha_entity||'';$('#tvEditEnabled').checked=!!old.enabled;$('#tvEditDefault').checked=!!old.is_default;updateTvEditorMode();setTvEditorVisible(true);$('#tvEditName').focus()}
-function updateTvEditorMode(){let adb=$('#tvEditMode').value==='adb';document.querySelectorAll('.tv-ha-field').forEach(x=>x.classList.toggle('hidden',adb));$('#tvEditHost').required=adb}
-async function saveTvEditor(e){e.preventDefault();let body={id:$('#tvEditId').value.trim(),name:$('#tvEditName').value.trim(),host:$('#tvEditHost').value.trim(),ha_entity:$('#tvEditHa').value.trim(),connection_mode:$('#tvEditMode').value,is_default:$('#tvEditDefault').checked,enabled:$('#tvEditEnabled').checked};try{await api(tvEditOriginalId?'/api/admin/tvs/'+encodeURIComponent(tvEditOriginalId):'/api/admin/tvs',{method:tvEditOriginalId?'PATCH':'POST',body:J(body)});setTvEditorVisible(false);toast('TV gespeichert',true);await loadTvs()}catch(e){toast(e.message)}}
-function setAdbPairVisible(show){$('#adbPairDialog').classList.toggle('hidden',!show)}
-function openAdbPair(id){let tv=tvItems.find(x=>x.id===id);if(!tv)return;$('#adbPairHost').value=(tv.ip_address||'').replace(/:5555$/,'');$('#adbPairPort').value='';$('#adbPairCode').value='';$('#adbPairOutput').textContent='Pairing-Daten am TV öffnen und hier eintragen.';setAdbPairVisible(true);$('#adbPairPort').focus()}
-async function pairAdb(e){e.preventDefault();let body={host:$('#adbPairHost').value.trim(),pair_port:Number($('#adbPairPort').value),pair_code:$('#adbPairCode').value.trim()},button=$('#adbPairForm button[type="submit"]');button.disabled=true;button.textContent='Kopple …';try{let paired=await api('/api/admin/adb/pair',{method:'POST',body:J(body)});$('#adbPairOutput').textContent=paired.output+'\n\nVerbinde mit '+body.host+':5555 …';let connected=await api('/api/admin/adb/connect',{method:'POST',body:J(body)});$('#adbPairOutput').textContent=paired.output+'\n'+connected.output;toast('ADB gekoppelt und verbunden',true)}catch(e){$('#adbPairOutput').textContent=e.message;toast(e.message)}finally{button.disabled=false;button.textContent='Koppeln'}}
+function openTvEditor(id=null){let o=tvItems.find(x=>x.id===id)||{id:'',name:'',ip_address:'',api_port:8090,api_username:'admin',api_password:'',enabled:1,is_default:!tvItems.length};tvEditOriginalId=id;$('#tvEditId').value=o.id;$('#tvEditId').disabled=!!id;$('#tvEditName').value=o.name;$('#tvEditHost').value=o.ip_address||'';$('#tvEditPort').value=o.api_port||8090;$('#tvEditUser').value=o.api_username||'admin';$('#tvEditPassword').value=o.api_password||'';$('#tvEditEnabled').checked=!!o.enabled;$('#tvEditDefault').checked=!!o.is_default;setTvEditorVisible(true)}
+async function saveTvEditor(e){e.preventDefault();let body={id:$('#tvEditId').value.trim(),name:$('#tvEditName').value.trim(),host:$('#tvEditHost').value.trim(),api_port:+$('#tvEditPort').value,api_username:$('#tvEditUser').value.trim(),api_password:$('#tvEditPassword').value,is_default:$('#tvEditDefault').checked,enabled:$('#tvEditEnabled').checked};try{await api(tvEditOriginalId?'/api/admin/tvs/'+encodeURIComponent(tvEditOriginalId):'/api/admin/tvs',{method:tvEditOriginalId?'PATCH':'POST',body:J(body)});setTvEditorVisible(false);await loadTvs()}catch(e){toast(e.message)}}
 async function removeTv(id){if(!confirm('TV wirklich löschen?'))return;try{await api('/api/admin/tvs/'+encodeURIComponent(id),{method:'DELETE'});toast('TV gelöscht',true);await loadTvs()}catch(e){toast(e.message)}}
-$('#newTv').onclick=()=>openTvEditor();$('#tvEditMode').onchange=updateTvEditorMode;$('#tvEditorForm').onsubmit=saveTvEditor;$('#tvEditorClose').onclick=$('#tvEditorCancel').onclick=()=>setTvEditorVisible(false);$('#adbPairForm').onsubmit=pairAdb;$('#adbPairClose').onclick=$('#adbPairCancel').onclick=()=>setAdbPairVisible(false);[$('#tvEditor'),$('#adbPairDialog')].forEach(x=>x.onclick=e=>{if(e.target===x)x.classList.add('hidden')});
+$('#newTv').onclick=()=>openTvEditor();$('#tvEditorForm').onsubmit=saveTvEditor;$('#tvEditorClose').onclick=$('#tvEditorCancel').onclick=()=>setTvEditorVisible(false);
 async function loadSettings(){try{let values=await api('/api/admin/settings');$('#settingsForm').innerHTML=SETTING_FIELDS.map(([key,label,type])=>`<label>${esc(label)}<input data-setting="${key}" type="${type}" step="any" value="${esc(values[key]??'')}"></label>`).join('')}catch(e){toast(e.message)}}
 $('#saveSettings').onclick=async()=>{let values={};document.querySelectorAll('[data-setting]').forEach(x=>values[x.dataset.setting]=x.type==='number'?Number(x.value):x.value);try{await api('/api/admin/settings',{method:'PATCH',body:J({values})});toast('Einstellungen gespeichert',true)}catch(e){toast(e.message)}};
 

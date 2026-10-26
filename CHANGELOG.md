@@ -4,7 +4,39 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ## [Unreleased]
 
-## [3.1.0] - 2026-10-21
+## [4.4.2] - 2026-10-26
+
+### Added
+
+- ADB-Bootstrap und Foreground-Recovery, wenn SmartTube beendet wurde oder nach Back/Home nur noch im Hintergrund läuft
+- REST- und ADB-Statusprüfung pro TV in der Hostoberfläche
+- MultiSync mit gemeinsamem Queue-Fenster, Video-Mismatch-Erkennung, parallelem Host-Skip und Drift-Korrektur
+- bevorzugte Einsortierung von Musikwünschen vor automatisch ergänzten Grundplaylist-Titeln
+- reduzierte Standard-Diagnose mit optionalem vollständigem Debugmodus
+
+### Changed
+
+- V4 nutzt die SmartTube-REST-API und die native SmartTube-Queue als primären Wiedergabepfad
+- Queue-Prefetch hält aktuellen Titel plus zwei Folgetitel bereit und ermöglicht natürliche Übergänge ohne erneuten `/play`-Aufruf
+- V4.4.2 ist der empfohlene Hauptstand; V3 bleibt als Legacy-Release erhalten
+
+### Fixed
+
+- Queue-Prefetch nach MultiSync-Übergängen wiederhergestellt
+- falsches Leeren beziehungsweise Abarbeiten der PartyQueue verhindert, wenn REST erreichbar ist, der sichtbare SmartTube-Player aber `idle` bleibt
+- Foreground-Recovery bestätigt den erwarteten Titel und baut anschließend das Queue-Fenster erneut auf
+- manueller Skip wird im MultiSync-Modus parallel an Lead und Follower gesendet
+- MultiSync bestätigt einen Videoübergang erst nach übereinstimmender Video-ID
+
+### Verified
+
+- SmartTube-Skip und Host-Skip
+- Recovery nach Android `force-stop`
+- Recovery nach zweimal Back beziehungsweise TV-Home-Menü
+- Stack-Neustart während laufender Wiedergabe
+- natürlicher Titelwechsel über die vorbereitete SmartTube-Queue
+
+## [4.3.0-alpha1] - 2026-10-21
 
 ### Added
 

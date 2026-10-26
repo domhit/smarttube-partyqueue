@@ -1,0 +1,3 @@
+# Queue Prefetch V4.1
+
+Diagnose: `QUEUE_PREFETCHED`, `QUEUE_PREFETCH_ERROR`, `NEXT_QUEUE_ADOPTED`.
