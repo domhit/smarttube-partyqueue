@@ -507,19 +507,27 @@ async def natural_end_wait(tv,queue_id,video_id):
   if end_pending.get(tv) is asyncio.current_task():end_pending.pop(tv,None)
 async def play_watchdog(tv,queue_id,x):
  try:
-  debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout)
-  await asyncio.sleep(settings.play_confirm_timeout)
-  pending=play_pending.get(tv)
+  debug_event('PLAY_CONFIRM_WAIT',tv,queue_id=queue_id,timeout=settings.play_confirm_timeout);await asyncio.sleep(settings.play_confirm_timeout);pending=play_pending.get(tv)
   if not pending or pending['queue_id']!=queue_id:return
-  arm_start_guard(tv,'play_retry');debug_event('PLAY_RETRY',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'))
-  await send_play_command(x,2)
-  await asyncio.sleep(settings.play_retry_timeout)
-  pending=play_pending.get(tv)
-  if pending and pending['queue_id']==queue_id:
-   debug_event('PLAY_CONFIRM_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'))
-   play_pending.pop(tv,None);await cast()
+  arm_start_guard(tv,'play_retry');debug_event('PLAY_RETRY',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'));await send_play_command(x,2);await asyncio.sleep(settings.play_retry_timeout);pending=play_pending.get(tv)
+  if not pending or pending['queue_id']!=queue_id:return
+  tv_config=get_tv(tv);state=None
+  try:state=await rest_state(tv_config)
+  except Exception as e:debug_event('PLAY_RECOVERY_STATE_ERROR',tv,queue_id=queue_id,error=repr(e))
+  live_video=(state or {}).get('videoId') or '';inactive=not live_video and not bool((state or {}).get('isPlaying')) and not bool((state or {}).get('isLoading'))
+  if inactive:
+   debug_event('FOREGROUND_RECOVERY_REQUIRED',tv,queue_id=queue_id,video_id=x.get('video_id'),reason='rest_alive_player_idle');arm_start_guard(tv,'foreground_recovery');recovered=await bootstrap_smarttube_with_video(tv_config,x,'foreground_recovery')
+   if recovered:
+    debug_event('FOREGROUND_RECOVERY_STARTED',tv,queue_id=queue_id,video_id=x.get('video_id'));await asyncio.sleep(settings.play_confirm_timeout);pending=play_pending.get(tv)
+    if not pending or pending['queue_id']!=queue_id:return
+    try:
+     state=await rest_state(tv_config);live_video=state.get('videoId') or ''
+     if live_video==x.get('video_id') and (state.get('isPlaying') or state.get('isLoading')):
+      play_pending.pop(tv,None);debug_event('PLAY_CONFIRMED_AFTER_FOREGROUND_RECOVERY',tv,queue_id=queue_id,video_id=x.get('video_id'),live_video_id=live_video);asyncio.create_task(prefetch_party_queue());await cast();return
+    except Exception as e:debug_event('FOREGROUND_RECOVERY_VERIFY_ERROR',tv,queue_id=queue_id,error=repr(e))
+   debug_event('FOREGROUND_RECOVERY_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'));await cast();return
+  debug_event('PLAY_CONFIRM_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'),live_video_id=live_video,state='playing' if (state or {}).get('isPlaying') else 'loading' if (state or {}).get('isLoading') else 'unknown');await cast()
  except asyncio.CancelledError:pass
-
 async def play(x):
  tv=x['target_tv'];old=play_pending.pop(tv,None)
  if old and old.get('task') and not old['task'].done():old['task'].cancel()
@@ -965,13 +973,17 @@ async def process_progress(b:Progress,source='home_assistant'):
   debug_event('SYNC_FOLLOWER_PROGRESS',tv,lead=p['default_tv'],state=b.state,position=round(new_pos,3),video_id=new_video_id,drift=round(new_pos-float(pb.get(p['default_tv'],{}).get('media_position',new_pos) or new_pos),3));await cast();return {'ok':True,'follower':True}
  pending=play_pending.get(tv)
  if pending and b.state in ('playing','buffering') and b.app_id=='smarttube_rest':
-  expected=pending.get('video_id') or '';matching=not expected or not new_video_id or expected==new_video_id
+  expected=pending.get('video_id') or '';matching=not expected or expected==new_video_id
   if matching and new_pos<=settings.play_confirm_max_position:
    play_pending.pop(tv,None)
    if pending.get('task') and not pending['task'].done():pending['task'].cancel()
    debug_event('PLAY_CONFIRMED',tv,queue_id=pending['queue_id'],video_id=expected,live_video_id=new_video_id,position=round(new_pos,3),latency=round(now-pending['requested'],3),state=b.state);asyncio.create_task(prefetch_party_queue())
   elif not matching:debug_event('PLAY_CONFIRM_REJECTED',tv,queue_id=pending['queue_id'],reason='video_id_mismatch',expected_video_id=expected,live_video_id=new_video_id,state=b.state)
  with conn() as c:r=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone()
+ if pending and b.state=='idle':
+  task=idle.pop(tv,None)
+  if task and not task.done():task.cancel()
+  debug_event('PLAY_PENDING_IDLE',tv,queue_id=pending.get('queue_id'),expected_video_id=pending.get('video_id'),reason='wait_for_watchdog_recovery');await cast();return {'ok':True,'play_pending':True}
  duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None;valid_app=b.app_id=='smarttube_rest';active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
  changed=bool(r and guard_ok and old_video_id and new_video_id and old_video_id!=new_video_id);expected_change=bool(changed and old_video_id==r['video_id']);near_end=bool(expected_change and end_threshold is not None and old_pos>=end_threshold)
  end_match=bool(r and valid_app and active_state and duration and (duration-new_pos)<=max(.25,settings.prestart_seconds));reset_match=bool(r and valid_app and active_state and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
@@ -990,11 +1002,11 @@ async def process_progress(b:Progress,source='home_assistant'):
  if b.state=='idle' and guard_ok:
   async def f():
    await asyncio.sleep(settings.idle_fallback_delay)
+   if tv in play_pending:return
    if pb.get(tv,{}).get('state')=='idle' and time.monotonic()>=guard.get(tv,0):await done(tv,'played','idle_fallback')
   if tv in idle and not idle[tv].done():idle[tv].cancel()
   idle[tv]=asyncio.create_task(f())
  await cast();return {'ok':True}
-
 @app.post('/api/playback/progress')
 async def progress(b:Progress,x_admin_password:str=Header(default='')):raise HTTPException(410,'V4 ist REST-only')
 async def collect_smarttube_queues():
