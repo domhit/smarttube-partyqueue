@@ -4,7 +4,7 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ## [Unreleased]
 
-## [4.4.3-alpha5] - 2026-10-27
+## [4.5.0-alpha1] - 2026-10-27
 
 ### Fixed
 - geplante SmartTube-Übergänge auf den nächsten PartyQueue-Titel werden adoptiert statt zurückgewiesen
@@ -13,7 +13,7 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 - MultiSync wartet während einer laufenden Queue-Recovery
 - veraltete Alpha2-Tests wurden entfernt
 
-## [4.4.3-alpha5] - 2026-10-27
+## [4.5.0-alpha1] - 2026-10-27
 
 ### Added
 

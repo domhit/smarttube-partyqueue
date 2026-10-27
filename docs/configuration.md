@@ -60,3 +60,9 @@ volumes:
 - `adb`: private ADB-Schlüssel
 
 Beide Verzeichnisse sichern. `adb` niemals veröffentlichen oder committen.
+
+### SmartTube Event API (V4.5)
+
+Unter **Host → Einstellungen** einen gemeinsamen **SmartTube Event Token** setzen. Derselbe Token wird anschließend in der SmartTube-PartyQueue-Einstellungsseite auf allen Geräten eingetragen. Die Device-ID muss exakt der internen TV-ID in PartyQueue entsprechen, z. B. `fiwo` oder `xi4k`.
+
+SmartTube verwendet als Server-URL die von außen erreichbare PartyQueue-Adresse, z. B. `http://192.168.1.10:8787`. SmartTube ergänzt selbst `/api/smarttube/event` und `/api/smarttube/event/health`.
