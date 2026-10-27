@@ -22,7 +22,7 @@ from .db import conn,init_db
 from .storage import list_tvs,get_tv,save_tv,delete_tv,default_tv,all_settings,set_settings,apply_runtime_settings,set_default_tv,set_tv_enabled
 from .youtube import video_id,details,search,playlist,quota
 from .smarttube_api import playback_state as rest_state,play_url as rest_play,command as rest_command,queue_state as rest_queue_state,queue_add as rest_queue_add,queue_move as rest_queue_move,queue_remove as rest_queue_remove
-clients=set();locks={};pb={};guard={};idle={};play_pending={};sync_hold={};sync_last_state={};sync_seek_after={};sync_mismatch_after={};sync_drift_samples={};queue_prefetch_locks={};end_pending={};bootstrap_locks={};bootstrap_cooldown={};bootstrap_tasks={};rest_unavailable_since={};rest_monitor_task=None
+clients=set();locks={};pb={};guard={};idle={};play_pending={};sync_hold={};sync_last_state={};sync_seek_after={};sync_mismatch_after={};sync_drift_samples={};queue_prefetch_locks={};end_pending={};bootstrap_locks={};bootstrap_cooldown={};bootstrap_tasks={};rest_unavailable_since={};live_mismatch={};unmanaged_live={};queue_health={};tv_health_state={};rest_monitor_task=None
 def devices(enabled_only=True):return list_tvs(enabled_only)
 log=logging.getLogger('partyqueue.playback');diag=deque(maxlen=500);diag_seq=0
 def debug_event(kind,tv=None,**data):
@@ -94,10 +94,11 @@ async def state():
   pls=[dict(r) for r in c.execute('SELECT p.*,COUNT(i.id) item_count FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id GROUP BY p.id ORDER BY p.name')]
   if not p:return {'party':None,'devices':[],'all_devices':devices(),'playlists':pls,'queue':[],'current':{},'history':[],'playback':{},'quota':quota()}
   q=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='queued' ORDER BY CASE WHEN source='base' THEN 1 ELSE 0 END,admin_priority DESC,CASE WHEN ?=1 THEN votes END DESC,position,id",(p['id'],p['upvote_sort']))];cu=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status='playing'",(p['id'],))];hi=[dict(r) for r in c.execute("SELECT queue.*,(SELECT COUNT(*) FROM hype_votes hv WHERE hv.queue_id=queue.id) hypes FROM queue WHERE party_id=? AND status IN ('played','skipped') ORDER BY finished_at DESC LIMIT 100",(p['id'],))]
- cm={x['target_tv']:x for x in cu};now=time.monotonic();play={}
+ cm={x['target_tv']:x for x in cu};scheduled_current=dict(cm);now=time.monotonic();play={}
  for tv,x in pb.items():
-  pos=x['media_position']+(max(0,now-x['received']) if x['state']=='playing' else 0);du=float(cm.get(tv,{}).get('duration_seconds')or 0);play[tv]={**x,'media_position':min(pos,du) if du else pos}
- return {'party':pub(p),'devices':pub(p)['allowed_devices'],'all_devices':devices(),'playlists':pls,'queue':q,'current':cm,'history':hi,'playback':play,'quota':quota()}
+  pos=x['media_position']+(max(0,now-x['received']) if x['state']=='playing' else 0);du=float(x.get('duration') or cm.get(tv,{}).get('duration_seconds') or 0);play[tv]={**x,'media_position':min(pos,du) if du else pos}
+  if x.get('video_id') and now-float(x.get('received') or 0)<10 and (not cm.get(tv) or cm[tv].get('video_id')!=x.get('video_id')):cm[tv]={'id':None,'video_id':x.get('video_id'),'title':x.get('title') or 'Externe Wiedergabe','channel':'','thumbnail':'','duration_seconds':du,'requested_by':'Externe Wiedergabe','guest_id':'','target_tv':tv,'position':0,'source':'live','status':'playing','party_id':p['id'],'votes':0,'admin_priority':0,'hypes':0,'live':True}
+ return {'party':pub(p),'devices':pub(p)['allowed_devices'],'all_devices':devices(),'playlists':pls,'queue':q,'current':cm,'scheduled_current':scheduled_current,'history':hi,'playback':play,'quota':quota()}
 async def cast():
  s=await state();dead=[]
  for w in clients:
@@ -358,7 +359,7 @@ async def prefetch_next(device_tv,queue_tv=None):
       to_index=desired
      )
 
-   q=await rest_queue_state(tv)
+   q=await rest_queue_state(tv);queue_health[device_tv]={'count':len(q.get('items') or []),'updated':time.monotonic(),'error':''}
 
    debug_event(
     'QUEUE_WINDOW_READY',
@@ -376,6 +377,7 @@ async def prefetch_next(device_tv,queue_tv=None):
 
   except Exception as e:
 
+   queue_health.setdefault(device_tv,{})['error']=repr(e);queue_health[device_tv]['error_at']=time.monotonic()
    debug_event(
     'QUEUE_PREFETCH_ERROR',
     device_tv,
@@ -522,11 +524,10 @@ async def play_watchdog(tv,queue_id,x):
     if not pending or pending['queue_id']!=queue_id:return
     try:
      state=await rest_state(tv_config);live_video=state.get('videoId') or ''
-     if live_video==x.get('video_id') and (state.get('isPlaying') or state.get('isLoading')):
-      play_pending.pop(tv,None);debug_event('PLAY_CONFIRMED_AFTER_FOREGROUND_RECOVERY',tv,queue_id=queue_id,video_id=x.get('video_id'),live_video_id=live_video);asyncio.create_task(prefetch_party_queue());await cast();return
+     if live_video==x.get('video_id') and (state.get('isPlaying') or state.get('isLoading')):play_pending.pop(tv,None);debug_event('PLAY_CONFIRMED_AFTER_FOREGROUND_RECOVERY',tv,queue_id=queue_id,video_id=x.get('video_id'),live_video_id=live_video);asyncio.create_task(prefetch_party_queue());await cast();return
     except Exception as e:debug_event('FOREGROUND_RECOVERY_VERIFY_ERROR',tv,queue_id=queue_id,error=repr(e))
    debug_event('FOREGROUND_RECOVERY_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'));await cast();return
-  debug_event('PLAY_CONFIRM_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'),live_video_id=live_video,state='playing' if (state or {}).get('isPlaying') else 'loading' if (state or {}).get('isLoading') else 'unknown');await cast()
+  debug_event('PLAY_CONFIRM_FAILED',tv,queue_id=queue_id,video_id=x.get('video_id'),title=x.get('title'),live_video_id=live_video);await cast()
  except asyncio.CancelledError:pass
 async def play(x):
  tv=x['target_tv'];old=play_pending.pop(tv,None)
@@ -575,14 +576,14 @@ async def life(app):
   rest_monitor_task.cancel()
   try:await rest_monitor_task
   except asyncio.CancelledError:pass
-app=FastAPI(version='4.4.3-alpha1',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
+app=FastAPI(version='4.4.3-alpha2',lifespan=life);B=Path(__file__).parent;BANNERS = Path(settings.data_dir) / 'banners'
 BANNERS.mkdir(parents=True,exist_ok=True);app.mount("/banners",StaticFiles(directory=BANNERS),name="banners");app.mount('/static',StaticFiles(directory=B/'static'),name='static')
 @app.get('/')
 async def g():return FileResponse(B/'static/guest.html')
 @app.get('/host')
 async def h():return FileResponse(B/'static/host.html')
 @app.get('/api/health')
-async def health():return {'ok':True,'version':'4.4.3-alpha1'}
+async def health():return {'ok':True,'version':'4.4.3-alpha2'}
 @app.get('/api/state')
 async def st():return await state()
 @app.get('/api/party/public')
@@ -623,28 +624,24 @@ async def hype(qid:int,b:Vote):
 
 @app.post('/api/admin/login')
 async def login(b:Auth):au(b.password);return {'ok':True}
-def classify_tv_health(enabled,rest_ok,expected_video,live_video,state,queue_count):
+def classify_tv_health(enabled,outage_seconds,age_seconds,expected_video,live_video,state,queue_count):
  if not enabled:return {'level':'off','label':'Deaktiviert','detail':'TV ist in PartyQueue deaktiviert'}
- if not rest_ok:return {'level':'red','label':'Offline','detail':'SmartTube REST API nicht erreichbar'}
- if expected_video:
-  if not live_video:return {'level':'yellow','label':'Player idle','detail':'REST erreichbar, aber kein aktiver Titel'}
-  if live_video!=expected_video:return {'level':'yellow','label':'Titel abweichend','detail':'Live-Titel stimmt nicht mit PartyQueue überein'}
-  if state not in ('playing','buffering','paused'):return {'level':'yellow','label':'Player unklar','detail':f'Unerwarteter Playerstatus: {state or "unbekannt"}'}
-  if queue_count<2:return {'level':'yellow','label':'Queue unvollständig','detail':f'Nur {queue_count} SmartTube-Queue-Einträge'}
- return {'level':'green','label':'Bereit' if not expected_video else 'Healthy','detail':'REST erreichbar' if not expected_video else f'{state}, Queue {queue_count} Einträge'}
-
-async def tv_health(tv):
- if not bool(tv.get('enabled',1)):
-  result=classify_tv_health(False,False,'','','offline',0);return {'id':tv['id'],**result,'rest_ok':False,'playback_state':'disabled','live_video_id':'','expected_video_id':'','queue_count':0}
- expected=playing_item(tv['id']);expected_video=(expected or {}).get('video_id') or ''
- try:
-  state,queue=await asyncio.gather(rest_state(tv),rest_queue_state(tv));live_video=state.get('videoId') or '';play_state='buffering' if state.get('isLoading') else ('playing' if state.get('isPlaying') else ('paused' if live_video else 'idle'));queue_count=len(queue.get('items') or []);result=classify_tv_health(bool(tv.get('enabled',1)),True,expected_video,live_video,play_state,queue_count);return {'id':tv['id'],**result,'rest_ok':True,'playback_state':play_state,'live_video_id':live_video,'expected_video_id':expected_video,'queue_count':queue_count}
- except Exception as e:
-  result=classify_tv_health(bool(tv.get('enabled',1)),False,expected_video,'','offline',0);return {'id':tv['id'],**result,'rest_ok':False,'playback_state':'offline','live_video_id':'','expected_video_id':expected_video,'queue_count':0,'error':str(e)}
+ if outage_seconds is not None:
+  if outage_seconds<15:return {'level':'yellow','label':'Verbindung instabil','detail':f'REST seit {outage_seconds:.0f} s nicht erreichbar'}
+  return {'level':'red','label':'Offline','detail':f'REST seit {outage_seconds:.0f} s nicht erreichbar'}
+ if age_seconds is None:return {'level':'yellow','label':'Noch keine Daten','detail':'Warte auf den ersten REST-Status'}
+ if age_seconds>10:return {'level':'yellow','label':'Status veraltet','detail':f'Letzter Status vor {age_seconds:.0f} s'}
+ if expected_video and not live_video:return {'level':'yellow','label':'Player idle','detail':'Kein aktiver SmartTube-Titel'}
+ if expected_video and live_video!=expected_video:return {'level':'yellow','label':'Titel abweichend','detail':'Live-Titel wird mit PartyQueue abgeglichen'}
+ if expected_video and queue_count is not None and queue_count<2:return {'level':'yellow','label':'Queue unvollständig','detail':f'Nur {queue_count} SmartTube-Queue-Einträge'}
+ return {'level':'green','label':'Healthy' if expected_video else 'Bereit','detail':f'{state or "erreichbar"}' + (f', Queue {queue_count} Einträge' if queue_count is not None else '')}
 
 @app.get('/api/admin/tvs/health')
 async def admin_tvs_health(x_admin_password:str=Header(default='')):
- au(x_admin_password);results=await asyncio.gather(*(tv_health(tv) for tv in list_tvs(False)));return {x['id']:x for x in results}
+ au(x_admin_password);now=time.monotonic();p=party();result={}
+ for tv in list_tvs(False):
+  tv_id=tv['id'];live=pb.get(tv_id,{});expected=playing_item(tv_id) if p else None;outage=now-rest_unavailable_since[tv_id] if tv_id in rest_unavailable_since else None;age=now-float(live.get('received') or 0) if live else None;qh=queue_health.get(tv_id,{});queue_count=qh.get('count') if now-float(qh.get('updated') or 0)<30 else None;health=classify_tv_health(bool(tv.get('enabled',1)),outage,age,(expected or {}).get('video_id') or '',live.get('video_id') or '',live.get('state'),queue_count);result[tv_id]={'id':tv_id,**health,'playback_state':live.get('state'),'live_video_id':live.get('video_id') or '','expected_video_id':(expected or {}).get('video_id') or '','queue_count':queue_count,'age_seconds':round(age,1) if age is not None else None,'outage_seconds':round(outage,1) if outage is not None else None}
+ return result
 
 @app.get('/api/admin/tvs')
 async def admin_tvs(x_admin_password:str=Header(default='')):au(x_admin_password);return list_tvs(False)
@@ -989,14 +986,31 @@ async def party_create(b:PartyCreate,x_admin_password:str=Header(default='')):
  for task in idle.values():
   if not task.done():task.cancel()
  idle.clear();await cast();return {'ok':True,'id':r.lastrowid}
+async def reconcile_live_state(tv,p,live_video,title,duration):
+ key=(tv,live_video);count=live_mismatch.get(key,0)+1
+ for old_key in [k for k in live_mismatch if k[0]==tv and k!=key]:live_mismatch.pop(old_key,None)
+ live_mismatch[key]=count
+ if count<3:return False
+ with conn() as c:
+  current=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='playing'",(p['id'],tv)).fetchone();queued=c.execute("SELECT * FROM queue WHERE party_id=? AND target_tv=? AND status='queued' AND video_id=? ORDER BY admin_priority DESC,position,id LIMIT 1",(p['id'],tv,live_video)).fetchone()
+  if queued:
+   if current:c.execute("UPDATE queue SET status='skipped',finished_at=CURRENT_TIMESTAMP WHERE id=?",(current['id'],))
+   c.execute("UPDATE queue SET status='playing',started_at=COALESCE(started_at,CURRENT_TIMESTAMP) WHERE id=?",(queued['id'],));unmanaged_live.pop(tv,None);debug_event('LIVE_STATE_RECONCILED',tv,old_queue_id=current['id'] if current else None,new_queue_id=queued['id'],video_id=live_video,title=queued['title']);live_mismatch.pop(key,None);await cast();asyncio.create_task(prefetch_party_queue());return True
+  if current:c.execute("UPDATE queue SET status='skipped',finished_at=CURRENT_TIMESTAMP WHERE id=?",(current['id'],))
+ unmanaged_live[tv]={'video_id':live_video,'title':title or 'Externe Wiedergabe','duration':float(duration or 0),'started':time.monotonic()};live_mismatch.pop(key,None);debug_event('LIVE_VIDEO_UNMANAGED',tv,old_queue_id=current['id'] if current else None,video_id=live_video,title=title or '',duration=duration);await cast();return True
+
+async def finish_unmanaged_live(tv,p,reason,new_video_id=''):
+ item=unmanaged_live.pop(tv,None)
+ if not item:return False
+ debug_event('LIVE_VIDEO_FINISHED',tv,video_id=item.get('video_id'),title=item.get('title'),reason=reason,new_video_id=new_video_id);arm_start_guard(tv,'unmanaged_'+reason);await cast();await nxt(tv);return True
+
 async def process_progress(b:Progress,source='home_assistant'):
  p=party();tv=tvok(b.target_tv,p);now=time.monotonic();old=pb.get(tv,{});old_state=old.get('state');old_pos=float(old.get('media_position',0) or 0);old_video_id=old.get('video_id') or '';new_video_id=(b.video_id or '').strip();new_pos=max(0,b.media_position);guard_remaining=max(0,guard.get(tv,0)-now)
  pb[tv]={'state':b.state,'media_position':new_pos,'app_id':b.app_id,'received':now,'source':source,'video_id':new_video_id,'title':b.title or '','duration':max(0,float(b.duration_seconds or 0)),'is_loading':bool(b.is_loading)}
- if p.get('sync_mode') and tv!=p['default_tv']:
-  debug_event('SYNC_FOLLOWER_PROGRESS',tv,lead=p['default_tv'],state=b.state,position=round(new_pos,3),video_id=new_video_id,drift=round(new_pos-float(pb.get(p['default_tv'],{}).get('media_position',new_pos) or new_pos),3));await cast();return {'ok':True,'follower':True}
+ if p.get('sync_mode') and tv!=p['default_tv']:debug_event('SYNC_FOLLOWER_PROGRESS',tv,lead=p['default_tv'],state=b.state,position=round(new_pos,3),video_id=new_video_id,drift=round(new_pos-float(pb.get(p['default_tv'],{}).get('media_position',new_pos) or new_pos),3));await cast();return {'ok':True,'follower':True}
  pending=play_pending.get(tv)
  if pending and b.state in ('playing','buffering') and b.app_id=='smarttube_rest':
-  expected=pending.get('video_id') or '';matching=not expected or not new_video_id or expected==new_video_id
+  expected=pending.get('video_id') or '';matching=not expected or expected==new_video_id
   if matching and new_pos<=settings.play_confirm_max_position:
    play_pending.pop(tv,None)
    if pending.get('task') and not pending['task'].done():pending['task'].cancel()
@@ -1007,14 +1021,20 @@ async def process_progress(b:Progress,source='home_assistant'):
   task=idle.pop(tv,None)
   if task and not task.done():task.cancel()
   debug_event('PLAY_PENDING_IDLE',tv,queue_id=pending.get('queue_id'),expected_video_id=pending.get('video_id'),reason='wait_for_watchdog_recovery');await cast();return {'ok':True,'play_pending':True}
+ unmanaged=unmanaged_live.get(tv)
+ if unmanaged:
+  if new_video_id and new_video_id!=unmanaged['video_id']:await finish_unmanaged_live(tv,p,'video_changed',new_video_id);return {'ok':True,'unmanaged_finished':True}
+  if b.state=='idle':await finish_unmanaged_live(tv,p,'idle');return {'ok':True,'unmanaged_finished':True}
+  await cast();return {'ok':True,'unmanaged':True}
  duration=float(r['duration_seconds'] or 0) if r else 0;end_threshold=max(0,duration-settings.prestart_seconds) if duration else None;valid_app=b.app_id=='smarttube_rest';active_state=b.state in ('playing','buffering');guard_ok=now>=guard.get(tv,0)
  changed=bool(r and guard_ok and old_video_id and new_video_id and old_video_id!=new_video_id);expected_change=bool(changed and old_video_id==r['video_id']);near_end=bool(expected_change and end_threshold is not None and old_pos>=end_threshold)
- end_match=bool(r and valid_app and active_state and duration and (duration-new_pos)<=max(.25,settings.prestart_seconds));reset_match=bool(r and valid_app and active_state and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos)
- idle_end=bool(r and b.state=='idle' and end_threshold is not None and old_pos>=end_threshold);idle_skip=bool(r and b.state=='idle' and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
+ end_match=bool(r and valid_app and active_state and duration and (duration-new_pos)<=max(.25,settings.prestart_seconds));reset_match=bool(r and valid_app and active_state and guard_ok and old_pos>=settings.external_skip_min_previous and new_pos<=settings.external_skip_max_new and new_pos+1<old_pos);idle_end=bool(r and b.state=='idle' and end_threshold is not None and old_pos>=end_threshold);idle_skip=bool(r and b.state=='idle' and guard_ok and old_pos>=settings.external_skip_min_previous and not idle_end)
  debug_event('PROGRESS',tv,source=source,state=b.state,old_state=old_state,position=round(new_pos,3),old_position=round(old_pos,3),app_id=b.app_id,expected_app='smarttube_rest',live_video_id=new_video_id,old_live_video_id=old_video_id,skip_enabled=True,guard_remaining=round(guard_remaining,3),queue_id=r['id'] if r else None,video_id=r['video_id'] if r else None,title=r['title'] if r else None,duration=r['duration_seconds'] if r else None)
- if expected_change:
-  result='played' if near_end else 'skipped';reason='video_changed_after_end' if near_end else 'video_changed';debug_event('END_DETECTED' if near_end else 'EXTERNAL_SKIP_DETECTED',tv,method='video_id_changed',old_video_id=old_video_id,new_video_id=new_video_id,old_position=round(old_pos,3),new_position=round(new_pos,3),duration=r['duration_seconds'],result_status=result);adopted=await finish_and_adopt(tv,new_video_id,result,reason);return {'ok':True,'video_changed':True,'adopted':adopted}
- if changed:debug_event('VIDEO_CHANGE_IGNORED',tv,old_video_id=old_video_id,new_video_id=new_video_id,expected_video_id=r['video_id'] if r else None)
+ if r and new_video_id and new_video_id!=r['video_id'] and active_state:
+  reconciled=await reconcile_live_state(tv,p,new_video_id,b.title,b.duration_seconds)
+  if reconciled:return {'ok':True,'reconciled':True}
+  debug_event('VIDEO_CHANGE_PENDING',tv,live_video_id=new_video_id,expected_video_id=r['video_id'],samples=live_mismatch.get((tv,new_video_id),0));await cast();return {'ok':True,'reconcile_pending':True}
+ for mismatch_key in [k for k in live_mismatch if k[0]==tv]:live_mismatch.pop(mismatch_key,None)
  if r and valid_app and active_state:
   if end_match:
    if tv not in end_pending or end_pending[tv].done():debug_event('END_DETECTED',tv,position=round(new_pos,3),duration=r['duration_seconds'],state=b.state,method='wait_for_smarttube_queue');end_pending[tv]=asyncio.create_task(natural_end_wait(tv,r['id'],r['video_id']))
@@ -1044,7 +1064,7 @@ async def playback_debug(limit:int=200,tv:Optional[str]=None,full:bool=False,x_a
  au(x_admin_password);limit=max(1,min(limit,500));events=list(diag)
  if tv:events=[x for x in events if x.get('tv')==tv]
  if not full:events=[x for x in events if x.get('kind') not in {'PROGRESS','QUEUE_WINDOW_READY','SYNC_FOLLOWER_PROGRESS'}]
- return {'version':'4.4.3-alpha1','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'smarttube_queues':await collect_smarttube_queues(),'events':events[-limit:]}
+ return {'version':'4.4.3-alpha2','generated_at':datetime.now(ZoneInfo(settings.tz)).isoformat(timespec='seconds'),'devices':current_diag(),'smarttube_queues':await collect_smarttube_queues(),'events':events[-limit:]}
 
 @app.delete('/api/admin/playback-debug')
 async def playback_debug_clear(x_admin_password:str=Header(default='')):
@@ -1186,7 +1206,7 @@ def recap_html(p,rows):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '–';source='Wunsch' if r['source']=='request' else 'Grundplaylist';status='übersprungen' if r['status']=='skipped' else 'gespielt';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist'
   tracks.append(f'<article class="track"><div class="number">{i}</div><div class="time">{clock}</div><img src="{safe(r.get("thumbnail"))}" alt=""><div><h3>{safe(r["title"])}</h3><p>{safe(r.get("channel"))}</p><div class="meta"><span>👤 {safe(who)}</span><span>👍 {int(r.get("votes") or 0)}</span><span>🎶 {source}</span><span>🔥 {int(r.get('hypes') or 0)}</span><span>{status}</span></div></div><a href="https://www.youtube.com/watch?v={safe(r["video_id"])}" target="_blank" rel="noopener">YouTube ↗</a></article>')
  ranking=''.join(f'<li><span>{safe(n)}</span><strong>{v}</strong></li>' for n,v in sorted(requesters.items(),key=lambda x:(-x[1],x[0]))[:10]) or '<li><span>Keine Wünsche</span><strong>0</strong></li>'
- return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V4.4.3-alpha1</footer></main></body></html>"""
+ return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe(p['name'])} – Party Recap</title><style>:root{{--card:#141b2d;--line:#283653;--text:#f8fafc;--muted:#9ca9bf;--blue:#38bdf8}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at top,#18264a,#090d18 38%);color:var(--text);font-family:system-ui}}main{{max-width:980px;margin:auto;padding:32px 18px 70px}}.hero{{text-align:center;padding:42px 22px;background:linear-gradient(135deg,#172554dd,#3b0764cc);border:1px solid #4c5c88;border-radius:28px}}h1{{font-size:clamp(38px,7vw,72px);margin:8px 0}}.hero p{{line-height:1.65;font-size:19px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}}.stat,.records>div,.panel{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}}.stat strong,.stat small,.records span,.records strong,.records small{{display:block}}.stat strong{{font-size:25px;margin:7px 0}}small,p{{color:var(--muted)}}.records{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}.panel{{margin-top:20px}}.track{{display:grid;grid-template-columns:34px 48px 72px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-top:1px solid var(--line)}}.track img{{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:9px}}.track h3,.track p{{margin:0}}.number,.time,a{{color:var(--blue);font-weight:700}}.meta{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px}}.meta span{{background:#1f2937;padding:4px 8px;border-radius:99px}}.ranking{{list-style:none;padding:0}}.ranking li{{display:flex;justify-content:space-between;padding:10px;border-top:1px solid var(--line)}}footer{{text-align:center;color:var(--muted);margin-top:34px}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.records{{grid-template-columns:1fr}}.track{{grid-template-columns:30px 42px 1fr}}.track img{{display:none}}.track>a{{grid-column:3}}}}@media print{{body{{background:white;color:#111}}.hero,.stat,.records>div,.panel{{background:white;color:#111}}}}</style></head><body><main><header class="hero"><div style="font-size:52px">🎉</div><h1>{safe(p['name'])}</h1><p>Hier ist die Playlist unserer <strong>{safe(p['name'])}</strong> vom <strong>{date_text}</strong>.<br>Losgelegt haben wir um <strong>{start_text}</strong> und <strong>{duration_text(seconds)}</strong> durchgehalten.<br>Danke für den schönen Abend! 🍻🎵</p></header><div class="stats">{cards_html}</div>{records}<section class="panel"><h2>🏅 Wunschgeber-Ranking</h2><ol class="ranking">{ranking}</ol></section><section class="panel"><h2>🎶 Unsere Playlist</h2>{''.join(tracks) if tracks else '<p>Keine gespielten Titel vorhanden.</p>'}</section><footer>Erstellt mit SmartTube PartyQueue · Party Recap V4.4.3-alpha2</footer></main></body></html>"""
 
 def recap_pdf(p,rows):
  out=io.BytesIO();doc=SimpleDocTemplate(out,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=15*mm,bottomMargin=15*mm,title=f"{p['name']} - Party Recap",author='SmartTube PartyQueue')
@@ -1206,7 +1226,7 @@ def recap_pdf(p,rows):
  for i,r in enumerate(rows,1):
   d=local_time(r.get('started_at') or r.get('created_at'));clock=d.strftime('%H:%M') if d else '-';who=r.get('requested_by') if r['source']=='request' else 'Grundplaylist';status='uebersprungen' if r['status']=='skipped' else 'gespielt';tracks.append([str(i),clock,Paragraph(f"<b>{xml_escape(r['title'])}</b><br/><font color='#64748b'>{xml_escape(r.get('channel') or '')} - {status} - Hype {int(r.get('hypes') or 0)}</font>",styles['Song']),Paragraph(xml_escape(who or ''),styles['Small']),str(int(r.get('votes') or 0))])
  tt=Table(tracks,colWidths=[10*mm,16*mm,81*mm,37*mm,16*mm],repeatRows=1);tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(0,0),(1,-1),'CENTER'),('ALIGN',(4,0),(4,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]));story.append(tt)
- def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V4.4.3-alpha1');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
+ def footer(canvas,doc):canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'));canvas.drawString(16*mm,8*mm,'Erstellt mit SmartTube PartyQueue V4.4.3-alpha2');canvas.drawRightString(A4[0]-16*mm,8*mm,f'Seite {doc.page}');canvas.restoreState()
  doc.build(story,onFirstPage=footer,onLaterPages=footer);out.seek(0);return out
 
 @app.get('/api/party/{pid}/export/{fmt}')

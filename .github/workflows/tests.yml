@@ -1,15 +1,12 @@
 name: Tests
-
 on:
   workflow_call:
   push:
     branches: [main, develop, develop-v*]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest

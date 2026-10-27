@@ -4,18 +4,18 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ## [Unreleased]
 
-## [4.4.3-alpha1] - 2026-10-27
+## [4.4.3-alpha2] - 2026-10-27
 
 ### Added
 
-- automatische Health-Ampel pro TV mit REST-, Player- und Queue-Zustand
-- automatische Aktualisierung der TV-Gesundheit alle 10 Sekunden
-- Regressionstests für TV-Health, MultiSync und Foreground-Recovery
-- GitHub-Actions-Preflight mit Python-, JavaScript-, Pytest- und Docker-Build-Prüfung
+- Live-State-Reconciliation zwischen SmartTube-Wiedergabe und PartyQueue-Datenbank nach drei stabilen REST-Polls
+- unbekannte externe Live-Titel werden sichtbar angezeigt und dürfen fertiglaufen; anschließend übernimmt PartyQueue wieder die Titelauswahl
+- Health-Hysterese: kurze REST-Ausfälle bleiben gelb, Rot erst nach 15 Sekunden durchgehendem Ausfall
 
 ### Changed
 
-- GHCR-Images werden erst nach erfolgreichen automatisierten Tests gebaut und veröffentlicht
+- Party- und Gastansicht bevorzugen aktuelle REST-Liveinformationen gegenüber einem veralteten DB-Titel
+- TV-Health verwendet vorhandene Polling- und Queue-Daten und erzeugt keine zusätzlichen REST-Abfragen
 
 ## [4.3.0-alpha1] - 2026-10-21
 
