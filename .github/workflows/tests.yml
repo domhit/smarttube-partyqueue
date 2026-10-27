@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  workflow_call:
+  push:
+    branches: [main, develop, develop-v*]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Python syntax
+        run: python -m py_compile app/*.py
+      - name: JavaScript syntax
+        run: |
+          node --check app/static/host.js
+          node --check app/static/guest.js
+          node --check userscript/partyqueue.user.js
+      - name: Regression tests
+        env:
+          DATA_DIR: ${{ runner.temp }}/partyqueue-test-data
+          ADMIN_PASSWORD: test
+          PYTHONPATH: .
+        run: pytest -q
+      - name: Docker build smoke test
+        run: docker build -t smarttube-partyqueue:test .

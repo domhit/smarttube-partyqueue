@@ -1,38 +1,10 @@
-# Migration von V3 auf V4.4.2
+# Migration von V3.1 auf V4
 
-V4.4.2 ist der empfohlene Hauptstand von SmartTube PartyQueue. V3 bleibt als Legacy-Release erhalten, wird aber nicht mehr als aktuelle Architektur weiterentwickelt.
+1. Vorher `data/partyqueue.db` sichern.
+2. SmartTube-REST-Fork auf jedem Zielgerät installieren und die REST API aktivieren.
+3. V4 zunächst mit einer Kopie des Datenverzeichnisses starten.
+4. Unter **Host > TVs** jedes Gerät bearbeiten und API-Port, Benutzer sowie Passwort ergänzen.
+5. Für jedes Gerät **API testen** ausführen.
+6. Erst danach eine Testparty starten.
 
-## Wesentliche Architekturänderung
-
-V3 wurde stärker durch externe Steuerpfade geprägt. V4 steuert SmartTube direkt über die REST-API und verwendet die native SmartTube-Queue.
-
-Der gewünschte Normalbetrieb ist:
-
-```text
-PartyQueue
-→ aktueller Titel + zwei Folgetitel in SmartTube
-→ SmartTube wechselt selbstständig zum nächsten Queue-Eintrag
-→ PartyQueue übernimmt den neuen aktuellen Titel
-→ Queue-Fenster wird wieder auf drei Titel ergänzt
-```
-
-ADB bleibt als Bootstrap- und Recovery-Pfad erhalten. Es wird insbesondere verwendet, wenn SmartTube beendet wurde oder zwar als Prozess/REST-Service erreichbar ist, der sichtbare Player aber nicht mehr aktiv ist.
-
-## Vor der Migration
-
-1. `data/` sichern.
-2. `adb/` sichern.
-3. Auf jedem TV denselben kompatiblen SmartTube-REST-Build installieren.
-4. REST und ADB im Host-TV-Tab testen.
-5. Die empfohlenen SmartTube-Wiedergabeeinstellungen aus der README übernehmen.
-
-## Nach der Migration testen
-
-- normalen Titelstart
-- natürlichen Titelwechsel
-- Skip direkt in SmartTube
-- Skip über die Hostoberfläche
-- `force-stop` von SmartTube
-- zweimal Back beziehungsweise TV-Home-Menü
-- Neustart des PartyQueue-Stacks während laufender Wiedergabe
-- bei MultiSync zusätzlich Lead/Follower-Wechsel, parallelen Skip und Drift-Korrektur
+Die Datenbankmigration ergänzt `api_port`, `api_username` und `api_password`. Alte ADB- und Home-Assistant-Spalten bleiben in bestehenden Datenbanken ungenutzt erhalten. Das ADB-Volume wird von V4 nicht mehr benötigt.
