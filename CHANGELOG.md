@@ -4,7 +4,16 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ## [Unreleased]
 
-## [4.4.3-alpha3] - 2026-10-27
+## [4.4.3-alpha4] - 2026-10-27
+
+### Fixed
+- geplante SmartTube-Übergänge auf den nächsten PartyQueue-Titel werden adoptiert statt zurückgewiesen
+- fremde Live-Titel werden weiterhin durch den erwarteten PartyQueue-Titel ersetzt
+- Queue-Recovery erhält eine sechssekündige Cooldown-Phase
+- MultiSync wartet während einer laufenden Queue-Recovery
+- veraltete Alpha2-Tests wurden entfernt
+
+## [4.4.3-alpha4] - 2026-10-27
 
 ### Added
 
