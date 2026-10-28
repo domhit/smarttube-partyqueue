@@ -1,4 +1,4 @@
-# SmartTube PartyQueue V4.5.0-alpha1
+# SmartTube PartyQueue V4.5.0-alpha2
 
 REST-only Alpha mit SmartTube-Queue-Prefetch. Der nächste PartyQueue-Titel wird über `/api/v1/queue/items` vorgeladen, direkt hinter den aktuellen Titel verschoben und beim automatischen Übergang ohne erneuten `/play`-Aufruf übernommen.
 
