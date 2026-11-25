@@ -1,68 +1,45 @@
 # Konfigurationsreferenz
 
-## Bootstrap-Konfiguration
+## Bootstrap-Konfiguration (.env)
 
-Die `.env` enthält nur Werte, die vor dem Start des Containers verfügbar sein müssen:
-
-```env
+```text
 ADMIN_PASSWORD=change-me
 DATA_DIR=/app/data
 ```
 
-- `ADMIN_PASSWORD`: Passwort für Hostoberfläche und geschützte Admin-API
-- `DATA_DIR`: persistentes Datenverzeichnis im Container
-
-## Laufzeiteinstellungen
-
-Nach dem Start unter **Host → Einstellungen** verwalten:
-
-- YouTube API Key
-- Zeitzone
-- SmartTube-Paketname
-- maximale Videolänge
-- maximale offene Wünsche je Gast
-- Suchcache, Mindestlänge und Ergebnisanzahl
-- YouTube-Kontingentgrenzen
-- Wiederholungsschutz
-- Ende-, Idle-, Skip- und Watchdog-Parameter
-- ADB-Abfrageintervall
-- Home-Assistant URL und Webhook-ID für den optionalen HA-Transport
-
-Die Werte werden in `settings_store` der SQLite-Datenbank gespeichert und nach dem Speichern unmittelbar angewendet.
+Alle Playback-, SmartTube-, YouTube- und TV-Einstellungen werden anschließend unter **Host -> Einstellungen** bzw. **Host -> TVs** gepflegt und in SQLite gespeichert.
 
 ## TVs
 
-TVs werden ausschließlich unter **Host → TVs** verwaltet. Pro Gerät werden gespeichert:
-
-- interne ID
+Pro Gerät werden gespeichert:
+- interne PartyQueue-ID
 - Anzeigename
-- Host oder IP-Adresse
-- Transportmodus `adb` oder `ha`
-- optionale Home-Assistant MediaSession-Entity
-- Aktivstatus
-- Standardstatus
+- Host/IP
+- SmartTube REST-Port (Standard `8090`)
+- REST-Benutzer und Passwort
+- Aktiv-/Standardstatus
 
-Die früheren Variablen `DEFAULT_TV` und `TV_DEVICES` sind entfernt.
+REST ist der primäre Transport. Unter **TVs -> REST testen** lässt sich die Verbindung prüfen.
 
-## Partybanner
+## ADB Bootstrap/Fallback
 
-Für die aktive Party kann ein JPG-, PNG- oder WebP-Bild bis 5 MB hochgeladen werden. Die Datei liegt unter `/app/data/banners` und wird über `/banners/...` ausgeliefert.
-
-## Volumes
+ADB wird nicht für den normalen Playback-Status verwendet. Es startet SmartTube bei einem REST-Ausfall und benötigt deshalb weiterhin das persistente Volume:
 
 ```yaml
-volumes:
-  - ./data:/app/data
-  - ./adb:/root/.android
+- ./adb:/root/.android
 ```
 
-- `data`: Datenbank, Banner und weitere persistente Anwendungsdaten
-- `adb`: private ADB-Schlüssel
+Einstellungen: Bootstrap aktiv, ADB-Port, Grace-Zeit, Ready-Timeout, Cooldown und SmartTube-Paketname.
 
-Beide Verzeichnisse sichern. `adb` niemals veröffentlichen oder committen.
+## SmartTube Event API
 
-### SmartTube Event API (V4.5)
+Optional kann SmartTube Ereignisse an PartyQueue pushen. Unter **Host -> Einstellungen** einen gemeinsamen **SmartTube Event Token** setzen. In SmartTube werden eingetragen:
+- PartyQueue-URL, z. B. `http://192.168.1.10:8787`
+- Device-ID exakt passend zur internen PartyQueue-TV-ID
+- derselbe Event-Token
 
-Unter **Host → Einstellungen** einen gemeinsamen **SmartTube Event Token** setzen. Derselbe Token wird anschließend in der SmartTube-PartyQueue-Einstellungsseite auf allen Geräten eingetragen. Die Device-ID muss exakt der internen TV-ID in PartyQueue entsprechen, z. B. `fiwo` oder `xi4k`.
+SmartTube verwendet `/api/smarttube/event` und `/api/smarttube/event/health`.
 
-SmartTube verwendet als Server-URL die von außen erreichbare PartyQueue-Adresse, z. B. `http://192.168.1.10:8787`. SmartTube ergänzt selbst `/api/smarttube/event` und `/api/smarttube/event/health`.
+## Queue Prefetch
+
+`queue_prefetch_interval` steuert den Abgleich von `next + reserve`. Das aktuell laufende Video wird nicht erneut als Kandidat verwendet. Nach Queue-Adds wartet PartyQueue kurz auf die aktualisierte SmartTube-Queue.

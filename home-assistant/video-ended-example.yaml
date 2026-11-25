@@ -1,5 +1,0 @@
-# V2.3: Diese alte reine Idle-Automation nicht mehr verwenden.
-# Stattdessen playback-progress.yaml als Automation anlegen.
-# Sie sendet MediaSession-Position und Status an die PartyQueue.
-# Der Container startet primär 4 Sekunden vor Ende den nächsten Titel
-# und nutzt idle nach 2 Sekunden weiterhin als Fallback.
