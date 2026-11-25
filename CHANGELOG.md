@@ -1,29 +1,43 @@
-## Changelog
+### Changelog
 
 Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. Das Format orientiert sich an Keep a Changelog und Semantic Versioning.
 
-### [Unreleased]
+#### [Unreleased]
 
-### [4.5.0-alpha5] - 2026-11-25
+#### [4.5.0-alpha6] - 2026-11-25
 
-#### Fixed
+##### Fixed
+- Deaktivierte oder aus der aktiven Party entfernte TVs werden nicht mehr als REST-Ausfall behandelt; Polling, Sync, Prefetch und Bootstrap werden für sie sauber gestoppt.
+- Natural-End-Wartefenster auf 20 Sekunden erweitert; wenn SmartTube danach noch auf dem beendeten Titel steht, wird der bereits ausgewählte Folgetitel kontrolliert per REST gestartet.
+- Natural-End-REST-Recovery wird mit `END_TRANSITION_REST_RECOVERY` eindeutig diagnostiziert.
+
+##### Changed
+- `QUEUE_PREFETCHED` wird nur noch bei tatsächlichem Add, Move oder geändertem Slot protokolliert.
+- Wieder aufgenommenes TV-Monitoring wird explizit als `DEVICE_MONITORING_RESUMED` protokolliert.
+
+#### [4.5.0-alpha5] - 2026-11-25
+
+##### Fixed
+- Prefetch und tatsächliche Next-Auswahl verwenden dieselbe zentrale Kandidatensortierung.
+- Echte Wünsche werden vor Grundplaylist-Fallbacks abgespielt, auch wenn ein Fallback bereits eine niedrigere Queue-Position besitzt.
+- Ein bereits in SmartTube vorbereiteter Wunsch wird beim Titelwechsel nicht mehr durch einen widersprüchlich ausgewählten Grundplaylist-Titel ersetzt.
+
+##### Changed
+- `NEXT_QUEUE_SELECTED` protokolliert zusätzlich die Quelle (`request` oder `base`).
+
+#### [4.5.0-alpha4] - 2026-11-25
+
+##### Fixed
+- Queue-Prefetch pausiert während eines erkannten natürlichen SmartTube-Titelübergangs.
+- Natural-End-Übergänge werden als `played` statt `skipped` abgeschlossen.
+
+#### [4.5.0-alpha3] - 2026-11-25
+
+##### Fixed
 - Queue-Prefetch schließt das aktuell laufende Video zuverlässig aus.
-- SmartTube-Queue-Matching verwendet die tatsächliche Reihenfolge von `items[]` statt eines möglicherweise verzögerten `index`-Felds.
-- Nach Queue-Adds wird bis zu 1,5 Sekunden auf Sichtbarkeit des neuen Eintrags gewartet.
-- Gültige Future-Queue-Einträge werden nicht mehr unnötig entfernt und erneut hinzugefügt.
+- SmartTube-Queue-Matching verwendet die tatsächliche Reihenfolge von `items[]`.
+- Nach Queue-Adds wird kurz auf die Sichtbarkeit des neuen Eintrags gewartet.
 
-#### Changed
+##### Changed
 - Veraltete Home-Assistant- und Debug-Entwicklungsdateien entfernt.
-- Architektur-, Migrations- und Queue-Prefetch-Dokumentation auf den REST-first-Stand von V4.5 aktualisiert.
-
-### [4.5.0-alpha2] - 2026-10-28
-
-#### Added
-- SmartTube Event API v1 mit `session_id` und Event-Token.
-- REST-basierter SmartTube-Queue-Prefetch für `current + next + reserve`.
-- ADB-Bootstrap/Fallback bei nicht erreichbarer SmartTube REST API.
-
-#### Changed
-- Pause/Resume-Events dienen nur als Telemetrie; Queue-/Historienentscheidungen kommen vom Lead.
-- REST ist der primäre Playback-Transport.
 

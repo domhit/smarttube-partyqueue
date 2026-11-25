@@ -6,7 +6,7 @@
 curl http://127.0.0.1:8787/api/health
 ```
 
-Erwartet: `{"ok":true,"version":"4.5.0-alpha5"}`.
+Erwartet: `{"ok":true,"version":"4.5.0-alpha6"}`.
 
 ## REST API
 
