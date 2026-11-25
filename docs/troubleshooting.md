@@ -6,11 +6,11 @@
 curl http://127.0.0.1:8787/api/health
 ```
 
-Erwartet: `{"ok":true,"version":"4.5.0-rc1"}`.
+Erwartet: `{"ok":true,"version":"4.5.0"}`.
 
 ## REST API
 
-Unter **Host -> TVs -> REST testen** prüfen. Standardport des PartyQueue-SmartTube-Forks ist `8090`. Bei Fehlern Host/IP, Port, Benutzer, Passwort und die in SmartTube aktivierte REST API kontrollieren.
+Unter **Host -> TVs -> REST testen** prÃ¼fen. Standardport des PartyQueue-SmartTube-Forks ist `8090`. Bei Fehlern Host/IP, Port, Benutzer, Passwort und die in SmartTube aktivierte REST API kontrollieren.
 
 ## Queue-Prefetch
 
@@ -20,11 +20,11 @@ Relevante Diagnoseereignisse:
 - `QUEUE_WINDOW_READY`
 - `QUEUE_PREFETCH_ERROR`
 
-Normal ist `current -> next -> reserve`. `current` darf nicht erneut per Queue-Add eingefügt werden.
+Normal ist `current -> next -> reserve`. `current` darf nicht erneut per Queue-Add eingefÃ¼gt werden.
 
 ## SmartTube startet bei REST-Ausfall nicht
 
-ADB dient nur als Bootstrap/Fallback. Prüfen:
+ADB dient nur als Bootstrap/Fallback. PrÃ¼fen:
 - ADB-Debugging am TV
 - ADB-Port und Host/IP
 - persistentes `./adb:/root/.android`
@@ -33,7 +33,7 @@ ADB dient nur als Bootstrap/Fallback. Prüfen:
 
 ## Events
 
-Wenn SmartTube Events aktiviert sind, PartyQueue-URL, Device-ID und gemeinsamen Event-Token prüfen. Die Device-ID muss exakt der PartyQueue-TV-ID entsprechen.
+Wenn SmartTube Events aktiviert sind, PartyQueue-URL, Device-ID und gemeinsamen Event-Token prÃ¼fen. Die Device-ID muss exakt der PartyQueue-TV-ID entsprechen.
 
 ## Logs
 
@@ -41,13 +41,13 @@ Wenn SmartTube Events aktiviert sind, PartyQueue-URL, Device-ID und gemeinsamen 
 docker compose logs --since=10m | grep PLAYBACK_DEBUG > playback-debug.log
 ```
 
-Im Debug-Tab kann zusätzlich die Diagnose-JSON kopiert werden.
+Im Debug-Tab kann zusÃ¤tzlich die Diagnose-JSON kopiert werden.
 
 
-## Gerät aus Party entfernt oder deaktiviert
+## GerÃ¤t aus Party entfernt oder deaktiviert
 
-Ein nicht mehr freigegebenes Gerät wird aus Polling, Sync und Prefetch genommen. Erwartetes Diagnoseereignis: `DEVICE_MONITORING_STOPPED` mit `reason=not_allowed` oder `reason=disabled`. Ein deaktiviertes Gerät soll **keine** REST-Outage-/403-Schleife erzeugen.
+Ein nicht mehr freigegebenes GerÃ¤t wird aus Polling, Sync und Prefetch genommen. Erwartetes Diagnoseereignis: `DEVICE_MONITORING_STOPPED` mit `reason=not_allowed` oder `reason=disabled`. Ein deaktiviertes GerÃ¤t soll **keine** REST-Outage-/403-Schleife erzeugen.
 
-## Langsamer natürlicher Titelwechsel
+## Langsamer natÃ¼rlicher Titelwechsel
 
-Nach `END_DETECTED` wartet PartyQueue bis zu 20 Sekunden auf den SmartTube-Übergang. Bleibt SmartTube auf dem beendeten Titel, erscheint `END_TRANSITION_REST_RECOVERY`; PartyQueue startet dann den bereits ausgewählten Folgetitel kontrolliert per REST.
+Nach `END_DETECTED` wartet PartyQueue bis zu 20 Sekunden auf den SmartTube-Ãœbergang. Bleibt SmartTube auf dem beendeten Titel, erscheint `END_TRANSITION_REST_RECOVERY`; PartyQueue startet dann den bereits ausgewÃ¤hlten Folgetitel kontrolliert per REST.

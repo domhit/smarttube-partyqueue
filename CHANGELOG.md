@@ -4,6 +4,16 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 #### [Unreleased]
 
+#### [4.5.0] - 2026-11-25
+
+##### Released
+- V4.5 REST-first Playback nach erfolgreichem RC1-Hardwaretest freigegeben.
+- SmartTube Queue Prefetch mit `current -> next -> reserve`.
+- SmartTube Event API für Start, natürliches Ende, Skip und SponsorBlock.
+- Wunschpriorisierung vor Grundplaylist-Fallbacks.
+- Multi-TV-Sync mit Late Join, Drift- und Follower-Recovery.
+- ADB nur noch für SmartTube Bootstrap/Recovery.
+- TV-Monitoring stoppt sauber für deaktivierte oder aus der Party entfernte Geräte.
 #### [4.5.0-rc1] - 2026-11-25
 
 ##### Release Candidate

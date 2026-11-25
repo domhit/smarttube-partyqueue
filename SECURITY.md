@@ -1,6 +1,6 @@
 # Sicherheit
 
-## Unterstützte Versionen
+## UnterstÃ¼tzte Versionen
 
 | Version | Sicherheitsupdates |
 |---|---|
@@ -10,12 +10,12 @@
 
 ## Sicherheitsproblem melden
 
-Sicherheitsprobleme nicht als öffentliches Issue veröffentlichen. GitHub Private Vulnerability Reporting verwenden, sofern aktiviert, oder den Maintainer privat kontaktieren.
+Sicherheitsprobleme nicht als Ã¶ffentliches Issue verÃ¶ffentlichen. GitHub Private Vulnerability Reporting verwenden, sofern aktiviert, oder den Maintainer privat kontaktieren.
 
 ## Betriebshinweise
 
-- `ADMIN_PASSWORD` vor dem ersten Start ändern.
-- YouTube API Key, REST-Passwörter, SmartTube Event Token und ADB-Schlüssel geheim halten.
-- Hostoberfläche nicht ungeschützt öffentlich bereitstellen.
-- Bei externem Zugriff HTTPS und Zugriffsbeschränkungen am Reverse Proxy verwenden.
+- `ADMIN_PASSWORD` vor dem ersten Start Ã¤ndern.
+- YouTube API Key, REST-PasswÃ¶rter, SmartTube Event Token und ADB-SchlÃ¼ssel geheim halten.
+- HostoberflÃ¤che nicht ungeschÃ¼tzt Ã¶ffentlich bereitstellen.
+- Bei externem Zugriff HTTPS und ZugriffsbeschrÃ¤nkungen am Reverse Proxy verwenden.
 - `/app/data` und `/root/.android` sichern.

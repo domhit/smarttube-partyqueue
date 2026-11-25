@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube -> SmartTube PartyQueue
 // @namespace    smarttube-partyqueue
-// @version      4.5.0-rc1
-// @description  Fügt YouTube-Videos und Suchergebnisse zur SmartTube PartyQueue hinzu
+// @version      4.5.0
+// @description  FÃ¼gt YouTube-Videos und Suchergebnisse zur SmartTube PartyQueue hinzu
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
 // @grant        GM_xmlhttpRequest
@@ -74,7 +74,7 @@
       target_tv: targetTv
     });
     localStorage.partyqueue_last_tv = targetTv;
-    toast(`✓ Zur Queue hinzugefügt · Position ${result.position}`, true);
+    toast(`âœ“ Zur Queue hinzugefÃ¼gt Â· Position ${result.position}`, true);
   }
 
   function closeDialog() {
@@ -85,9 +85,9 @@
   async function chooseTarget(videoUrl) {
     try {
       const party = await request('GET', '/api/party/public');
-      if (party.queue_locked) throw new Error('Musikwünsche sind derzeit gesperrt');
+      if (party.queue_locked) throw new Error('MusikwÃ¼nsche sind derzeit gesperrt');
       const devices = party.allowed_devices || [];
-      if (!devices.length) throw new Error('Für diese Party ist kein Abspieler freigegeben');
+      if (!devices.length) throw new Error('FÃ¼r diese Party ist kein Abspieler freigegeben');
       if (party.sync_mode || devices.length === 1) return enqueue(videoUrl, party.default_tv || devices[0].id);
 
       closeDialog();
@@ -96,9 +96,9 @@
       const dialog = document.createElement('div');
       dialog.id = 'partyqueue-dialog';
       const close = document.createElement('button');
-      close.id = 'partyqueue-close'; close.title = 'Schließen'; close.textContent = '×'; close.onclick = closeDialog;
-      const heading = document.createElement('h2'); heading.textContent = '🎉 Zur PartyQueue';
-      const description = document.createElement('p'); description.textContent = 'Zielgerät auswählen';
+      close.id = 'partyqueue-close'; close.title = 'SchlieÃŸen'; close.textContent = 'Ã—'; close.onclick = closeDialog;
+      const heading = document.createElement('h2'); heading.textContent = 'ðŸŽ‰ Zur PartyQueue';
+      const description = document.createElement('p'); description.textContent = 'ZielgerÃ¤t auswÃ¤hlen';
       const holder = document.createElement('div'); holder.id = 'partyqueue-device-buttons';
       dialog.append(close, heading, description, holder); overlay.appendChild(dialog);
       document.body.appendChild(overlay); activeDialog = overlay;
@@ -123,7 +123,7 @@
     const videoUrl = cleanVideoUrl(location.href);
     if (!videoUrl || !document.body) return;
     const button = document.createElement('button');
-    button.id = 'partyqueue-floating-button'; button.textContent = '🎉 PartyQueue';
+    button.id = 'partyqueue-floating-button'; button.textContent = 'ðŸŽ‰ PartyQueue';
     button.onclick = () => chooseTarget(videoUrl); document.body.appendChild(button);
   }
 
@@ -132,7 +132,7 @@
       const renderer = link.closest('ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-rich-item-renderer, yt-lockup-view-model') || link.parentElement;
       if (!renderer || renderer.querySelector(`.${BUTTON_CLASS}`)) return;
       const videoUrl = cleanVideoUrl(link.href); if (!videoUrl) return;
-      const button = document.createElement('button'); button.className = BUTTON_CLASS; button.textContent = '🎉 PartyQueue';
+      const button = document.createElement('button'); button.className = BUTTON_CLASS; button.textContent = 'ðŸŽ‰ PartyQueue';
       button.onclick = event => { event.preventDefault(); event.stopPropagation(); chooseTarget(videoUrl); };
       const target = renderer.querySelector('#meta, #metadata, #details, .yt-lockup-metadata-view-model-wiz__metadata') || link.parentElement;
       target.appendChild(button);
