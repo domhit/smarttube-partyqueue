@@ -6,3 +6,4 @@ data/*.db*
 adb/
 data/banners/*
 !data/banners/.gitkeep
+*.zip

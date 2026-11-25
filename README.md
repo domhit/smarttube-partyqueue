@@ -1,69 +1,34 @@
-# SmartTube PartyQueue V4.4.2
+# SmartTube PartyQueue V4.5.0-rc1
 
-SmartTube PartyQueue ist eine eigenständige Party-Musikqueue mit direkter SmartTube-REST-Steuerung. V4 verwendet die native SmartTube-Queue für vorausgeladene Folgetitel und ermöglicht dadurch weitgehend lückenlose Übergänge ohne erneuten `/play`-Aufruf bei jedem regulären Titelwechsel.
+Self-hosted Party-Musikqueue für SmartTube mit Gastoberfläche, Hostverwaltung, Playlists, Archiv/Recap und Multi-TV-Sync.
 
-## Aktueller stabiler Stand
+**V4.5.0-rc1** ist der Release Candidate des hardwaregetesteten REST-first-Playbackpfads. Getestet wurden natürliche Queue-Übergänge, SmartTube Events, SponsorBlock, Wunschpriorisierung, Multi-TV-Sync, Late Join, deaktivierte Geräte und REST-Recovery auf Android-TV-/Fire-TV-Geräten.
 
-V4.4.2 ist der empfohlene Stand für den produktiven Partybetrieb und ersetzt V3 als Hauptentwicklungslinie.
+## Playback in V4.5
 
-Kernfunktionen:
+PartyQueue steuert SmartTube primär über die REST API des PartyQueue-SmartTube-Forks (Standardport `8090`). Der nächste Titel und eine Reserve werden direkt in SmartTube vorbereitet:
 
-- REST-only Wiedergabesteuerung über die SmartTube API
-- Queue-Fenster aus aktuellem Titel plus zwei Folgetiteln
-- Wünsche werden vor automatisch ergänzten Grundplaylist-Titeln priorisiert
-- natürliche Queue-Übergänge mit Übernahme des bereits gestarteten Folgetitels
-- Skip über SmartTube selbst oder über die Hostoberfläche
-- ADB-Bootstrap und Foreground-Recovery bei beendetem oder in den Hintergrund verschobenem SmartTube
-- REST- und ADB-Diagnose pro TV
-- optionaler MultiSync-Betrieb mit Lead/Follower-Logik, Video-Abgleich und Drift-Korrektur
-- Partyarchiv, HTML/PDF-Recaps, Playlists, Votes und Hypes
+```text
+current -> next -> reserve
+```
 
-## Verifizierte Recovery- und Wiedergabeszenarien
+SmartTube kann dadurch natürliche Titelübergänge selbst ausführen. PartyQueue überwacht Playback und Queue per REST, übernimmt geplante Übergänge und korrigiert Abweichungen. Die optionale SmartTube Event API liefert zusätzliche eindeutige Ereignisse wie `video_ended`, `user_skip` und `sponsorblock_skip`.
 
-Für V4.4.2 wurden erfolgreich getestet:
-
-- normaler automatischer Titelwechsel über die SmartTube-Queue
-- Skip direkt in SmartTube
-- Skip über die PartyQueue-Hostoberfläche
-- SmartTube per Android `force-stop` beenden und automatisch wiederherstellen
-- SmartTube über zweimal Back beziehungsweise das TV-Home-Menü in den Hintergrund schicken und automatisch wieder in den Vordergrund holen
-- Neustart des PartyQueue-Stacks während laufender Wiedergabe
+ADB bleibt als Bootstrap/Fallback erhalten, falls SmartTube oder seine REST API nicht erreichbar ist. Ein persistentes `./adb:/root/.android`-Volume ist deshalb weiterhin empfohlen.
 
 ## Empfohlene SmartTube-Einstellungen
 
-Für einen zuverlässigen Betrieb sollten auf allen PartyQueue-Geräten die wiedergaberelevanten SmartTube-Einstellungen identisch gesetzt werden:
+Auf allen PartyQueue-Geräten möglichst identisch:
+- Hintergrundwiedergabe/PiP passend zum Gerät aktivieren
+- Videos fortlaufend abspielen
+- Pause nach jedem Video: aus
+- Stop nach jedem Video: aus
+- REST API aktivieren und Zugangsdaten in PartyQueue unter **Host -> TVs** spiegeln
 
-- **Allgemein → Hintergrundwiedergabe:** Bild-in-Bild bei Home/Back aktivieren
-- **Player → Wiedergabemodus:** Videos fortlaufend abspielen
-- **Player → Pause nach jedem Video:** deaktivieren
-- **Player → Stop nach jedem Video:** deaktivieren
-- **Player → Netzwerk-Engine:** Cronet
+Decoder-, HDR-, Codec- und Audioeinstellungen dürfen gerätespezifisch bleiben.
 
-Video-, Audio- und Decoder-Voreinstellungen sollten dagegen geräteabhängig bleiben. Fire TV, Xiaomi TV Stick und unterschiedliche Bravia-/Android-TV-Generationen können unterschiedliche Decoder-, HDR-, Codec- und Audiofähigkeiten besitzen.
+## Entwicklung
 
-Für PartyQueue gilt grundsätzlich:
-
-1. SmartTube soll die vorbereitete Queue selbstständig abarbeiten.
-2. PartyQueue überwacht Wiedergabe, Queue und Recovery.
-3. ADB dient als Bootstrap- und Recovery-Pfad, wenn REST allein den sichtbaren Player nicht wiederherstellen kann.
-4. MultiSync gleicht bei mehreren Geräten Video-ID, Wiedergabezustand und größere Positionsabweichungen ab.
-
-## Deployment
-
-Für produktive Installationen wird das GHCR-Image verwendet. Persistiert werden mindestens:
-
-```yaml
-volumes:
-  - ./data:/app/data
-  - ./adb:/root/.android
-```
-
-Das `adb`-Verzeichnis enthält private ADB-Schlüssel und darf nicht veröffentlicht oder committed werden.
-
-Weitere Informationen:
-
-- `docs/configuration.md`
-- `docs/troubleshooting.md`
-- `docs/migration-v4.md`
-- `docs/ghcr.md`
-- `CHANGELOG.md`
+- `main`: stabile Releases
+- `develop` / `develop-v*`: laufende Entwicklung
+- Tests: `pytest -q`, Python-/JavaScript-Syntax und Docker-Smoke-Build via GitHub Actions

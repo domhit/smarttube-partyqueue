@@ -1,44 +1,32 @@
-# GHCR Deployment
+# GitHub Container Registry
 
-Das produktive Image wird über GitHub Container Registry bereitgestellt:
+Der Workflow `.github/workflows/ghcr.yml` testet und baut Images für `linux/amd64` und `linux/arm64` und veröffentlicht sie unter `ghcr.io/domhit/smarttube-partyqueue`.
 
-```text
-ghcr.io/domhit/smarttube-partyqueue
-```
+## Entwicklungsimages
 
-## Empfohlener Release
+Pushes auf `develop` oder `develop-v*` erzeugen den jeweiligen Branch-Tag sowie einen `sha-*`-Tag. Der aktuell verwendete Entwicklungsbranch ist `develop-v4`.
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:4.4.2
+docker pull ghcr.io/domhit/smarttube-partyqueue:develop-v4
 ```
 
-Für Installationen, die automatisch dem jeweils aktuellen stabilen Release folgen sollen:
+## Release Candidate
+
+Der V4.5 Release Candidate wird mit folgendem Git-Tag veröffentlicht:
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:latest
+git tag -a v4.5.0-rc1 -m "SmartTube PartyQueue v4.5.0-rc1"
+git push origin v4.5.0-rc1
 ```
 
-## Release-Tags
-
-Für einen stabilen V4.4.2-Release:
+Danach ist das versionierte Image verfügbar als:
 
 ```bash
-git tag -a v4.4.2 -m "SmartTube PartyQueue 4.4.2"
-git push origin v4.4.2
+docker pull ghcr.io/domhit/smarttube-partyqueue:4.5.0-rc1
 ```
 
-Die Release-Pipeline soll mindestens `v4.4.2`, `4.4.2`, `4.4` und `latest` veröffentlichen.
+`docker-compose.ghcr.yml` ist für den RC bewusst auf `4.5.0-rc1` festgesetzt. Erst der finale, nach `main` gemergte `v4.5.0`-Release soll als stabiler Produktionsstand dokumentiert werden.
 
-## Compose
+## CI-Prüfungen vor Veröffentlichung
 
-`docker-compose.ghcr.yml` ist auf `4.4.2` festgesetzt. Wer bewusst einer Entwicklungs- oder Vorabversion folgen möchte, ändert den Image-Tag explizit.
-
-Persistente Volumes:
-
-```yaml
-volumes:
-  - ./data:/app/data
-  - ./adb:/root/.android
-```
-
-`adb` enthält private ADB-Schlüssel und gehört nicht ins Repository.
+Der GHCR-Workflow hängt vom wiederverwendbaren Testworkflow ab. Vor dem Image-Build laufen Python-Syntax, JavaScript-Syntax, `pytest` und ein Docker-Smoke-Build. Das veröffentlichte Image erhält außerdem Provenance-/SBOM-Metadaten.

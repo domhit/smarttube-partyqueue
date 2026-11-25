@@ -1,18 +1,21 @@
-# Security Policy
+# Sicherheit
 
 ## Unterstützte Versionen
 
-| Version | Support |
-| --- | --- |
-| 4.4.x | Ja |
-| 4.3.x und älter | Nein, Upgrade auf V4.4.2 empfohlen |
-| 3.x | Legacy, keine aktive Weiterentwicklung |
+| Version | Sicherheitsupdates |
+|---|---|
+| 4.5.x | Ja, aktueller Release Candidate |
+| 4.4.x | Nur kritische Korrekturen |
+| < 4.4 | Nein |
 
-## Sicherheitsrelevante Hinweise
+## Sicherheitsproblem melden
 
-- Das Admin-Passwort nicht mit veröffentlichen.
-- `data/` enthält die PartyQueue-Datenbank und sollte gesichert werden.
-- `adb/` beziehungsweise `/root/.android` enthält private ADB-Schlüssel. Dieses Verzeichnis niemals veröffentlichen oder committen.
-- Gastzugriff und Host-/Adminzugriff sollten im Reverse Proxy und in der Firewall getrennt werden.
+Sicherheitsprobleme nicht als öffentliches Issue veröffentlichen. GitHub Private Vulnerability Reporting verwenden, sofern aktiviert, oder den Maintainer privat kontaktieren.
 
-Sicherheitsprobleme bitte nicht als öffentliches Issue mit Zugangsdaten, API-Keys oder privaten ADB-Schlüsseln melden.
+## Betriebshinweise
+
+- `ADMIN_PASSWORD` vor dem ersten Start ändern.
+- YouTube API Key, REST-Passwörter, SmartTube Event Token und ADB-Schlüssel geheim halten.
+- Hostoberfläche nicht ungeschützt öffentlich bereitstellen.
+- Bei externem Zugriff HTTPS und Zugriffsbeschränkungen am Reverse Proxy verwenden.
+- `/app/data` und `/root/.android` sichern.
