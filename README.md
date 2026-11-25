@@ -1,29 +1,32 @@
-# SmartTube PartyQueue V4.5.0-alpha2
+# SmartTube PartyQueue V4.5.0-alpha3
 
-REST-only Alpha mit SmartTube-Queue-Prefetch. Der nächste PartyQueue-Titel wird über `/api/v1/queue/items` vorgeladen, direkt hinter den aktuellen Titel verschoben und beim automatischen Übergang ohne erneuten `/play`-Aufruf übernommen.
+Self-hosted Party-Musikqueue für SmartTube mit Gastoberfläche, Hostverwaltung, Playlists, Archiv/Recap und Multi-TV-Sync.
+
+## Playback in V4.5
+
+PartyQueue steuert SmartTube primär über die REST API des PartyQueue-SmartTube-Forks (Standardport `8090`). Der nächste Titel und eine Reserve werden direkt in SmartTube vorbereitet:
+
+```text
+current -> next -> reserve
+```
+
+SmartTube kann dadurch natürliche Titelübergänge selbst ausführen. PartyQueue überwacht Playback und Queue per REST, übernimmt geplante Übergänge und korrigiert Abweichungen. Die optionale SmartTube Event API liefert zusätzliche eindeutige Ereignisse wie `video_ended`, `user_skip` und `sponsorblock_skip`.
+
+ADB bleibt als Bootstrap/Fallback erhalten, falls SmartTube oder seine REST API nicht erreichbar ist. Ein persistentes `./adb:/root/.android`-Volume ist deshalb weiterhin empfohlen.
 
 ## Empfohlene SmartTube-Einstellungen
 
-Für einen zuverlässigen Betrieb mit PartyQueue sollten auf allen verwendeten
-SmartTube-Geräten folgende Einstellungen identisch gesetzt werden:
+Auf allen PartyQueue-Geräten möglichst identisch:
+- Hintergrundwiedergabe/PiP passend zum Gerät aktivieren
+- Videos fortlaufend abspielen
+- Pause nach jedem Video: aus
+- Stop nach jedem Video: aus
+- REST API aktivieren und Zugangsdaten in PartyQueue unter **Host -> TVs** spiegeln
 
-- **Allgemein → Hintergrundwiedergabe:** Bild-in-Bild bei Home/Back aktivieren
-- **Player → Wiedergabemodus:** Videos fortlaufend abspielen
-- **Player → Pause nach jedem Video:** deaktivieren
-- **Player → Stop nach jedem Video:** deaktivieren
-- **Player → Netzwerk-Engine:** Cronet
+Decoder-, HDR-, Codec- und Audioeinstellungen dürfen gerätespezifisch bleiben.
 
-Video-, Audio- und Decoder-Voreinstellungen sollten dagegen nicht zwingend
-zwischen verschiedenen Geräten synchronisiert werden. Fire TV, Xiaomi TV
-Stick und unterschiedliche TV-Generationen können verschiedene Decoder-,
-HDR-, Codec- und Audiofähigkeiten besitzen.
+## Entwicklung
 
-Für PartyQueue gilt grundsätzlich:
-
-1. Wiedergabe soll nicht abbrechen.
-2. SmartTube soll die vorbereitete Queue selbstständig abarbeiten.
-3. PartyQueue überwacht und korrigiert die Wiedergabe.
-4. MultiSync korrigiert Abweichungen zwischen den Geräten.
-
-Dadurch kann die Wiedergabe auch bei einem vorübergehenden Netzwerk- oder
-Sync-Problem möglichst selbstständig weiterlaufen.
+- `main`: stabile Releases
+- `develop` / `develop-v*`: laufende Entwicklung
+- Tests: `pytest -q`, Python-/JavaScript-Syntax und Docker-Smoke-Build via GitHub Actions
