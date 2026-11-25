@@ -1,6 +1,8 @@
-# SmartTube PartyQueue V4.5.0-alpha6
+# SmartTube PartyQueue V4.5.0-rc1
 
 Self-hosted Party-Musikqueue für SmartTube mit Gastoberfläche, Hostverwaltung, Playlists, Archiv/Recap und Multi-TV-Sync.
+
+**V4.5.0-rc1** ist der Release Candidate des hardwaregetesteten REST-first-Playbackpfads. Getestet wurden natürliche Queue-Übergänge, SmartTube Events, SponsorBlock, Wunschpriorisierung, Multi-TV-Sync, Late Join, deaktivierte Geräte und REST-Recovery auf Android-TV-/Fire-TV-Geräten.
 
 ## Playback in V4.5
 

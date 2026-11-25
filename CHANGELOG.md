@@ -4,6 +4,22 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 #### [Unreleased]
 
+#### [4.5.0-rc1] - 2026-11-25
+
+##### Release Candidate
+- Hardwaregetesteten V4.5 REST-first-Stand aus Alpha6 ohne neue Playback-Funktionen eingefroren.
+- Dokumentation, Versionsangaben, GHCR-Hinweise und Troubleshooting auf den Release-Candidate-Stand vereinheitlicht.
+- Veraltete V2.8.3-Screenshots und die versehentlich versionierte `source.zip` entfernt.
+- `*.zip` in `.gitignore` aufgenommen, damit lokale Archive nicht erneut committed werden.
+
+##### Validiert
+- SmartTube REST Playback und Queue-Prefetch (`current -> next -> reserve`).
+- SmartTube Events für Start, natürliches Ende, Skip und SponsorBlock.
+- Wunschpriorisierung vor Grundplaylist-Fallbacks.
+- Multi-TV-Sync, Late Join, Drift-Recovery und Follower-Recovery.
+- Entfernen/deaktivieren von TVs ohne REST-Outage-Spam.
+- 20-Sekunden Natural-End-Recovery als REST-Fallback.
+
 #### [4.5.0-alpha6] - 2026-11-25
 
 ##### Fixed

@@ -1,38 +1,32 @@
 # GitHub Container Registry
 
-Der Workflow `.github/workflows/ghcr.yml` baut Images für `linux/amd64` und `linux/arm64` und veröffentlicht sie unter:
+Der Workflow `.github/workflows/ghcr.yml` testet und baut Images für `linux/amd64` und `linux/arm64` und veröffentlicht sie unter `ghcr.io/domhit/smarttube-partyqueue`.
 
-```text
-ghcr.io/domhit/smarttube-partyqueue
-```
+## Entwicklungsimages
 
-## Tags
-
-- Push auf `develop`: `develop` und `sha-<commit>`
-- Git-Tag `v4.5.0-alpha6`: `v4.5.0-alpha6`, `4.5.0-alpha6`, `3.0` und `latest`
-- Vorabversionen: beispielsweise `v4.5.0-alpha6-beta1` und `4.5.0-alpha6-beta1`
-
-## Pull
+Pushes auf `develop` oder `develop-v*` erzeugen den jeweiligen Branch-Tag sowie einen `sha-*`-Tag. Der aktuell verwendete Entwicklungsbranch ist `develop-v4`.
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:4.5.0-alpha6
+docker pull ghcr.io/domhit/smarttube-partyqueue:develop-v4
 ```
 
-Für den aktuellen stabilen Release:
+## Release Candidate
+
+Der V4.5 Release Candidate wird mit folgendem Git-Tag veröffentlicht:
 
 ```bash
-docker pull ghcr.io/domhit/smarttube-partyqueue:latest
+git tag -a v4.5.0-rc1 -m "SmartTube PartyQueue v4.5.0-rc1"
+git push origin v4.5.0-rc1
 ```
 
-## Veröffentlichung
+Danach ist das versionierte Image verfügbar als:
 
 ```bash
-git tag -a v4.5.0-alpha6 -m "SmartTube PartyQueue 4.5.0-alpha6"
-git push origin v4.5.0-alpha6
+docker pull ghcr.io/domhit/smarttube-partyqueue:4.5.0-rc1
 ```
 
-Der Tag löst den Workflow aus. Das Paket muss auf GitHub auf `Public` stehen, wenn anonyme Pulls erlaubt sein sollen.
+`docker-compose.ghcr.yml` ist für den RC bewusst auf `4.5.0-rc1` festgesetzt. Erst der finale, nach `main` gemergte `v4.5.0`-Release soll als stabiler Produktionsstand dokumentiert werden.
 
-## Portainer und Compose
+## CI-Prüfungen vor Veröffentlichung
 
-`docker-compose.ghcr.yml` ist für diesen Release auf `4.5.0-alpha6` festgesetzt. Wer automatisch dem neuesten stabilen Release folgen möchte, kann den Tag auf `latest` ändern.
+Der GHCR-Workflow hängt vom wiederverwendbaren Testworkflow ab. Vor dem Image-Build laufen Python-Syntax, JavaScript-Syntax, `pytest` und ein Docker-Smoke-Build. Das veröffentlichte Image erhält außerdem Provenance-/SBOM-Metadaten.

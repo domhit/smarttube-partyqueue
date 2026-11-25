@@ -4,7 +4,7 @@
 
 | Version | Sicherheitsupdates |
 |---|---|
-| 4.5.x | Ja, aktuelle Entwicklung |
+| 4.5.x | Ja, aktueller Release Candidate |
 | 4.4.x | Nur kritische Korrekturen |
 | < 4.4 | Nein |
 

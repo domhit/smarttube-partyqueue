@@ -56,7 +56,7 @@ Beispiele:
 feat: add direct adb device management
 fix: prevent duplicate playback retry
 refactor: isolate playback transport layer
-docs: document home assistant setup
+docs: document SmartTube REST setup
 chore: publish container image
 ```
 

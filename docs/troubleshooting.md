@@ -6,7 +6,7 @@
 curl http://127.0.0.1:8787/api/health
 ```
 
-Erwartet: `{"ok":true,"version":"4.5.0-alpha6"}`.
+Erwartet: `{"ok":true,"version":"4.5.0-rc1"}`.
 
 ## REST API
 
@@ -42,3 +42,12 @@ docker compose logs --since=10m | grep PLAYBACK_DEBUG > playback-debug.log
 ```
 
 Im Debug-Tab kann zusätzlich die Diagnose-JSON kopiert werden.
+
+
+## Gerät aus Party entfernt oder deaktiviert
+
+Ein nicht mehr freigegebenes Gerät wird aus Polling, Sync und Prefetch genommen. Erwartetes Diagnoseereignis: `DEVICE_MONITORING_STOPPED` mit `reason=not_allowed` oder `reason=disabled`. Ein deaktiviertes Gerät soll **keine** REST-Outage-/403-Schleife erzeugen.
+
+## Langsamer natürlicher Titelwechsel
+
+Nach `END_DETECTED` wartet PartyQueue bis zu 20 Sekunden auf den SmartTube-Übergang. Bleibt SmartTube auf dem beendeten Titel, erscheint `END_TRANSITION_REST_RECOVERY`; PartyQueue startet dann den bereits ausgewählten Folgetitel kontrolliert per REST.

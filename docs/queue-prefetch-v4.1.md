@@ -17,7 +17,7 @@ Regeln:
 Diagnoseereignisse: `QUEUE_PREFETCHED`, `QUEUE_ITEM_REMOVED`, `QUEUE_WINDOW_READY`, `QUEUE_PREFETCH_ERROR`.
 
 
-### Einheitliche Auswahl ab V4.5.0-alpha6
+### Einheitliche Auswahl in V4.5
 
 Prefetch und tatsächlicher Titelstart verwenden dieselbe Sortierung:
 
@@ -30,6 +30,6 @@ Prefetch und tatsächlicher Titelstart verwenden dieselbe Sortierung:
 Dadurch kann ein bereits vorgeladener Grundplaylist-Titel einen später eingegangenen Wunsch nicht mehr beim tatsächlichen Titelwechsel überholen.
 
 
-#### Natural-End-Recovery ab V4.5.0-alpha6
+#### Natural-End-Recovery in V4.5
 
 Nach `END_DETECTED` wartet PartyQueue bis zu 20 Sekunden darauf, dass SmartTube den vorbereiteten Folgetitel selbst aktiviert. Währenddessen bleiben Prefetch und Queue-Mutationen gesperrt. Bleibt SmartTube nach 20 Sekunden noch auf dem beendeten Titel, startet PartyQueue den bereits ausgewählten Folgetitel kontrolliert über REST und protokolliert `END_TRANSITION_REST_RECOVERY`.
