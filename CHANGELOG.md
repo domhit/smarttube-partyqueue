@@ -4,7 +4,7 @@ Alle wesentlichen Änderungen an SmartTube PartyQueue werden hier dokumentiert. 
 
 ### [Unreleased]
 
-### [4.5.0-alpha4] - 2026-11-25
+### [4.5.0-alpha5] - 2026-11-25
 
 #### Fixed
 - Queue-Prefetch schließt das aktuell laufende Video zuverlässig aus.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube -> SmartTube PartyQueue
 // @namespace    smarttube-partyqueue
-// @version      4.5.0-alpha4
+// @version      4.5.0-alpha5
 // @description  Fügt YouTube-Videos und Suchergebnisse zur SmartTube PartyQueue hinzu
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*

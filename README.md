@@ -1,4 +1,4 @@
-# SmartTube PartyQueue V4.5.0-alpha4
+# SmartTube PartyQueue V4.5.0-alpha5
 
 Self-hosted Party-Musikqueue für SmartTube mit Gastoberfläche, Hostverwaltung, Playlists, Archiv/Recap und Multi-TV-Sync.
 

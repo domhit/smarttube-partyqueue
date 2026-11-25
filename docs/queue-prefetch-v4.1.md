@@ -15,3 +15,16 @@ Regeln:
 - Gültige Future-Items werden nur entfernt, wenn sie außerhalb des aktuellen Sollfensters liegen.
 
 Diagnoseereignisse: `QUEUE_PREFETCHED`, `QUEUE_ITEM_REMOVED`, `QUEUE_WINDOW_READY`, `QUEUE_PREFETCH_ERROR`.
+
+
+### Einheitliche Auswahl ab V4.5.0-alpha5
+
+Prefetch und tatsächlicher Titelstart verwenden dieselbe Sortierung:
+
+1. explizite Admin-Priorität,
+2. echte Wünsche vor Grundplaylist-Fallbacks,
+3. Votes bei aktivierter Vote-Sortierung,
+4. Queue-Position,
+5. Datenbank-ID.
+
+Dadurch kann ein bereits vorgeladener Grundplaylist-Titel einen später eingegangenen Wunsch nicht mehr beim tatsächlichen Titelwechsel überholen.
