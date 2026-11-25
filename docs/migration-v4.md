@@ -1,12 +1,10 @@
-# Migration auf V4/V4.5
+# Migration von V3.1 auf V4
 
-1. `data/partyqueue.db` sichern.
-2. Den aktuellen PartyQueue-SmartTube-Fork auf den Zielgeräten installieren.
-3. In SmartTube die REST API aktivieren und Port, Benutzer und Passwort festlegen.
-4. In PartyQueue unter **Host → TVs** dieselben REST-Zugangsdaten hinterlegen.
-5. Für jedes Gerät **REST testen** ausführen.
-6. `./adb:/root/.android` weiterhin persistent einbinden. ADB wird in V4.5 nur noch für SmartTube-Bootstrap/Recovery verwendet.
-7. Optional SmartTube Events konfigurieren: PartyQueue-URL, Device-ID und gemeinsamer Event-Token.
-8. Erst danach eine Testparty starten und im Debug-Tab Queue und Playback prüfen.
+1. Vorher `data/partyqueue.db` sichern.
+2. SmartTube-REST-Fork auf jedem Zielgerät installieren und die REST API aktivieren.
+3. V4 zunächst mit einer Kopie des Datenverzeichnisses starten.
+4. Unter **Host > TVs** jedes Gerät bearbeiten und API-Port, Benutzer sowie Passwort ergänzen.
+5. Für jedes Gerät **API testen** ausführen.
+6. Erst danach eine Testparty starten.
 
-Die REST API ist der primäre Transport. `/api/playback/progress` aus älteren Home-Assistant-Ständen ist in V4 nicht mehr aktiv.
+Die Datenbankmigration ergänzt `api_port`, `api_username` und `api_password`. Alte ADB- und Home-Assistant-Spalten bleiben in bestehenden Datenbanken ungenutzt erhalten. Das ADB-Volume wird von V4 nicht mehr benötigt.
